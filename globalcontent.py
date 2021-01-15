@@ -1,3 +1,5 @@
+from functools import partial
+
 from kivy.lang import Builder
 
 from kivy.uix.anchorlayout import AnchorLayout
@@ -7,6 +9,21 @@ from kivy.properties import ObjectProperty, StringProperty, OptionProperty, \
     ColorProperty
 
 from kivy.uix.button import Button
+
+
+Builder.load_string("""
+<ContextButton>:
+    size_hint_y: None
+""")
+
+
+class ContextButton(Button):
+    index = NumericProperty(0)
+
+    def __init__(self, index=0, **kwargs):
+        self.index = index
+
+        super(Button, self).__init__(**kwargs, text=str(index))
 
 
 Builder.load_string("""
@@ -80,11 +97,14 @@ Builder.load_string("""
                     anchor_y: 'top'
     
                 AnchorLayout:          
-                    id: ContentPanel
                     size: [300, root.height - root.status_height - 4]
                     size_hint_y: None
                     anchor_x: 'left'
                     anchor_y: 'top'
+                    
+                    PageLayout:
+                        id: ContentPanel
+                        border: 0
                     
 """)
 
@@ -92,9 +112,7 @@ Builder.load_string("""
 class GlobalContentArea(AnchorLayout):
     """Base window for the application, hosts context buttons, status bar and content area.
 
-    Wildly influenced by and copied from Kivy's TabbedPanel!
-    Might be replaced by an adapted TabbedPanel later, right now it seems to be easier to take
-    the things we need.
+    Some properties copied from Kivy's TabbedPanel
     """
 
     background_color = ColorProperty([0, 0, 0, 1])
@@ -145,11 +163,36 @@ class GlobalContentArea(AnchorLayout):
     def __init__(self, **kwargs):
         self._tabs = []
         self._btns = []
+        self._statusbar = None
 
         super(GlobalContentArea, self).__init__(**kwargs)
 
 #        self.ids.StatusBar.add_widget(GlobalContentPanel2())
 #        self.ids.ContentPanel.add_widget(GlobalContentPanel3())
 
+    def set_page(self, page):
+        self.ids.ContentPanel.page = page
+        self._current_tab = self._tabs[page]
+
     def register_content(self, name, icon, content):
-        self.ids.ContextButtons.add_widget(Button(text=name, size=(100, 100), size_hint_y=None))
+        index = len(self._btns)
+        cbtn = ContextButton(index=index,
+                             on_press=lambda inst: self.set_page(index),
+                             size=(self.tab_width, self.tab_height))
+        self._btns.append(cbtn)
+        self.ids.ContextButtons.add_widget(cbtn)
+
+        self._tabs.append(content)
+        self.ids.ContentPanel.add_widget(content)
+        self._current_tab = content
+
+    def register_status_bar(self, statusbar):
+        # Remove a status bar if it already exists
+        if self._statusbar is not None:
+            self.ids.StatusBar.remove_widget(self._statusbar)
+
+        self._statusbar = statusbar
+
+        # Register status bar if one was given
+        if self._statusbar is not None:
+            self.ids.StatusBar.add_widget(self._statusbar)
