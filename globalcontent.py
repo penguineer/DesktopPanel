@@ -3,7 +3,6 @@ from functools import partial
 from kivy.lang import Builder
 
 from kivy.uix.anchorlayout import AnchorLayout
-from kivy.uix.boxlayout import BoxLayout
 from kivy.properties import ObjectProperty, StringProperty, OptionProperty, \
     ListProperty, NumericProperty, AliasProperty, BooleanProperty, \
     ColorProperty
@@ -11,19 +10,28 @@ from kivy.properties import ObjectProperty, StringProperty, OptionProperty, \
 from kivy.uix.button import Button
 
 
-Builder.load_string("""
-<ContextButton>:
-    size_hint_y: None
-""")
+class ContentPage:
+    def __init__(self, index, label, icon, content):
+        self._index = index
+        self._label = label
+        self._icon = icon
+        self._content = content
 
+    @property
+    def index(self):
+        return self._index
 
-class ContextButton(Button):
-    index = NumericProperty(0)
+    @property
+    def label(self):
+        return self._label
 
-    def __init__(self, index=0, **kwargs):
-        self.index = index
+    @property
+    def icon(self):
+        return self._icon
 
-        super(Button, self).__init__(**kwargs, text=str(index))
+    @property
+    def content(self):
+        return self._content
 
 
 Builder.load_string("""
@@ -129,15 +137,15 @@ class GlobalContentArea(AnchorLayout):
     defaults to [77/256, 177/256, 76/256, 1].
     """
 
-    _current_tab = ObjectProperty(None)
+    _current_page = ObjectProperty(None)
 
-    def get_current_tab(self):
-        return self._current_tab
+    def get_current_page(self):
+        return self._current_page
 
-    current_tab = AliasProperty(get_current_tab, None, bind=('_current_tab', ))
-    """Links to the currently selected or active tab.
+    current_page = AliasProperty(get_current_page, None, bind=('_current_page',))
+    """Links to the currently selected or active page.
 
-    :attr:`current_tab` is an :class:`~kivy.AliasProperty`, read-only.
+    :attr:`current_page` is an :class:`~kivy.AliasProperty`, read-only.
     """
 
     tab_height = NumericProperty('100dp')
@@ -162,31 +170,30 @@ class GlobalContentArea(AnchorLayout):
     '''
 
     def __init__(self, **kwargs):
-        self._tabs = []
-        self._btns = []
+        self._pages = []
         self._statusbar = None
 
         super(GlobalContentArea, self).__init__(**kwargs)
 
-#        self.ids.StatusBar.add_widget(GlobalContentPanel2())
-#        self.ids.ContentPanel.add_widget(GlobalContentPanel3())
-
     def set_page(self, page):
-        if self._current_tab is not None:
-            self.ids.ContentPanel.remove_widget(self._current_tab)
-        self._current_tab = self._tabs[page]
-        self.ids.ContentPanel.add_widget(self._current_tab)
+        if self._current_page is not None:
+            self.ids.ContentPanel.remove_widget(self._current_page)
+        self._current_page = self._pages[page].content
+        self.ids.ContentPanel.add_widget(self._current_page)
 
     def register_content(self, name, icon, content):
-        index = len(self._btns)
+        index = len(self._pages)
+        page = ContentPage(index=index,
+                           label=name,
+                           icon=icon,
+                           content=content)
+        self._pages.append(page)
         cbtn = ContextButton(index=index,
                              on_press=lambda inst: self.set_page(index),
                              size=(self.tab_width, self.tab_height))
-        self._btns.append(cbtn)
         self.ids.ContextButtons.add_widget(cbtn)
 
-        self._tabs.append(content)
-        if self._current_tab is None:
+        if self._current_page is None:
             self.set_page(index)
 
     def register_status_bar(self, statusbar):
