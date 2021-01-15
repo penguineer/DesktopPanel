@@ -17,6 +17,14 @@ class ContentPage:
         self._icon = icon
         self._content = content
 
+        self._btn = None
+
+    def create_context_button(self, length, cb):
+        self._btn = ContextButton(self.index,
+                                  on_press=cb,
+                                  size=(length, length))
+        return self._btn
+
     @property
     def index(self):
         return self._index
@@ -33,10 +41,17 @@ class ContentPage:
     def content(self):
         return self._content
 
+    @property
+    def btn(self):
+        return self._btn
+
 
 Builder.load_string("""
 <ContextButton>:
     size_hint_y: None
+    background_normal: ''
+    background_down: ''
+    background_color: 0, 0, 0, 1
 """)
 
 
@@ -46,7 +61,7 @@ class ContextButton(Button):
     def __init__(self, index=0, **kwargs):
         self.index = index
 
-        super(Button, self).__init__(**kwargs, text=str(index))
+        super(Button, self).__init__(**kwargs, text="")
 
 
 Builder.load_string("""
@@ -177,9 +192,13 @@ class GlobalContentArea(AnchorLayout):
 
     def set_page(self, page):
         if self._current_page is not None:
-            self.ids.ContentPanel.remove_widget(self._current_page)
-        self._current_page = self._pages[page].content
-        self.ids.ContentPanel.add_widget(self._current_page)
+            self.ids.ContentPanel.remove_widget(self._current_page.content)
+            self._current_page.btn.background_color = [0, 0, 0, 1]
+
+        self._current_page = self._pages[page]
+
+        self.ids.ContentPanel.add_widget(self._current_page.content)
+        self._current_page.btn.background_color = [249/256, 176/256, 0/256, 1]
 
     def register_content(self, name, icon, content):
         index = len(self._pages)
@@ -188,9 +207,9 @@ class GlobalContentArea(AnchorLayout):
                            icon=icon,
                            content=content)
         self._pages.append(page)
-        cbtn = ContextButton(index=index,
-                             on_press=lambda inst: self.set_page(index),
-                             size=(self.tab_width, self.tab_height))
+
+        cbtn = page.create_context_button(length=self.tab_height,
+                                          cb=lambda inst: self.set_page(index))
         self.ids.ContextButtons.add_widget(cbtn)
 
         if self._current_page is None:
