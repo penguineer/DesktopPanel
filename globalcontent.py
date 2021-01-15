@@ -102,9 +102,10 @@ Builder.load_string("""
                     anchor_x: 'left'
                     anchor_y: 'top'
                     
-                    PageLayout:
+                    AnchorLayout:
                         id: ContentPanel
-                        border: 0
+                        anchor_x: 'left'
+                        anchor_y: 'top'
                     
 """)
 
@@ -171,8 +172,10 @@ class GlobalContentArea(AnchorLayout):
 #        self.ids.ContentPanel.add_widget(GlobalContentPanel3())
 
     def set_page(self, page):
-        self.ids.ContentPanel.page = page
+        if self._current_tab is not None:
+            self.ids.ContentPanel.remove_widget(self._current_tab)
         self._current_tab = self._tabs[page]
+        self.ids.ContentPanel.add_widget(self._current_tab)
 
     def register_content(self, name, icon, content):
         index = len(self._btns)
@@ -183,8 +186,8 @@ class GlobalContentArea(AnchorLayout):
         self.ids.ContextButtons.add_widget(cbtn)
 
         self._tabs.append(content)
-        self.ids.ContentPanel.add_widget(content)
-        self._current_tab = content
+        if self._current_tab is None:
+            self.set_page(index)
 
     def register_status_bar(self, statusbar):
         # Remove a status bar if it already exists
