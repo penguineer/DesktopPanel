@@ -47,6 +47,18 @@ class ContentPage:
     def notification(self, state):
         self._btn.notify_state = state
 
+    @property
+    def active(self):
+        return self._btn.active
+
+    def on_active(self, is_active):
+        pass
+
+    @active.setter
+    def active(self, is_active):
+        self._btn.active = is_active
+        self.on_active(is_active)
+
 
 Builder.load_string("""
 <ContextButton>:
@@ -250,12 +262,12 @@ class GlobalContentArea(AnchorLayout):
     def set_page(self, page):
         if self._current_page is not None:
             self.ids.ContentPanel.remove_widget(self._current_page.content)
-            self._current_page.btn.active = False
+            self._current_page.active = False
 
         self._current_page = self._pages[page]
 
         self.ids.ContentPanel.add_widget(self._current_page.content)
-        self._current_page.btn.active = True
+        self._current_page.active = True
 
     def register_content(self, page):
         index = len(self._pages)
