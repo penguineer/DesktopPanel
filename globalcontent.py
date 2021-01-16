@@ -10,8 +10,7 @@ from kivy.animation import Animation
 
 
 class ContentPage:
-    def __init__(self, index, label, icon, content):
-        self._index = index
+    def __init__(self, label, icon, content):
         self._label = label
         self._icon = icon
         self._content = content
@@ -19,15 +18,10 @@ class ContentPage:
         self._btn = None
 
     def create_context_button(self, length, cb):
-        self._btn = ContextButton(index=self._index,
-                                  icon_path=self._icon,
+        self._btn = ContextButton(icon_path=self._icon,
                                   on_press=cb,
                                   size=(length, length))
         return self._btn
-
-    @property
-    def index(self):
-        return self._index
 
     @property
     def label(self):
@@ -107,8 +101,7 @@ class ContextButton(Button):
 
     index = NumericProperty(0)
 
-    def __init__(self, index=0, icon_path=None, **kwargs):
-        self.index = index
+    def __init__(self, icon_path=None, **kwargs):
         self.icon_path = icon_path
 
         # Alert animation
@@ -256,12 +249,8 @@ class GlobalContentArea(AnchorLayout):
         self.ids.ContentPanel.add_widget(self._current_page.content)
         self._current_page.btn.active = True
 
-    def register_content(self, name, icon, content):
+    def register_content(self, page):
         index = len(self._pages)
-        page = ContentPage(index=index,
-                           label=name,
-                           icon=icon,
-                           content=content)
         self._pages.append(page)
 
         cbtn = page.create_context_button(length=self.tab_height,
