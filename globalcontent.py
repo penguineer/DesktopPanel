@@ -39,6 +39,14 @@ class ContentPage:
     def btn(self):
         return self._btn
 
+    @property
+    def notification(self):
+        return str(self._btn.notify_state)
+
+    @notification.setter
+    def notification(self, state):
+        self._btn.notify_state = state
+
 
 Builder.load_string("""
 <ContextButton>:
