@@ -20,7 +20,8 @@ class ContentPage:
         self._btn = None
 
     def create_context_button(self, length, cb):
-        self._btn = ContextButton(self.index,
+        self._btn = ContextButton(index=self._index,
+                                  icon_path=self._icon,
                                   on_press=cb,
                                   size=(length, length))
         return self._btn
@@ -52,14 +53,34 @@ Builder.load_string("""
     background_normal: ''
     background_down: ''
     background_color: 0, 0, 0, 1
+
+    Image:
+        #:set l_active 64
+        #:set l_inactive 48
+        source: root.icon_path
+        x:
+            self.parent.x + (self.parent.width / 2) \
+            - ((l_active if root.active else l_inactive) / 2)
+        y:
+            self.parent.y + (self.parent.height / 2) \
+            - ((l_active if root.active else l_inactive) / 2)
+        size: ((l_active if root.active else l_inactive), (l_active if root.active else l_inactive))
+        color: root.icon_active_color if root.active else root.icon_inactive_color
 """)
 
 
 class ContextButton(Button):
+    icon_active_color = ColorProperty([249 / 256, 176 / 256, 0 / 256, 1])
+    icon_inactive_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
+    icon_path = StringProperty(None)
+
+    active = BooleanProperty(False)
+
     index = NumericProperty(0)
 
-    def __init__(self, index=0, **kwargs):
+    def __init__(self, index=0, icon_path=None, **kwargs):
         self.index = index
+        self.icon_path = icon_path
 
         super(Button, self).__init__(**kwargs, text="")
 
@@ -193,12 +214,12 @@ class GlobalContentArea(AnchorLayout):
     def set_page(self, page):
         if self._current_page is not None:
             self.ids.ContentPanel.remove_widget(self._current_page.content)
-            self._current_page.btn.background_color = [0, 0, 0, 1]
+            self._current_page.btn.active = False
 
         self._current_page = self._pages[page]
 
         self.ids.ContentPanel.add_widget(self._current_page.content)
-        self._current_page.btn.background_color = [249/256, 176/256, 0/256, 1]
+        self._current_page.btn.active = True
 
     def register_content(self, name, icon, content):
         index = len(self._pages)
