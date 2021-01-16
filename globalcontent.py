@@ -1,11 +1,8 @@
-from functools import partial
-
 from kivy.lang import Builder
 
 from kivy.uix.anchorlayout import AnchorLayout
-from kivy.properties import ObjectProperty, StringProperty, OptionProperty, \
-    ListProperty, NumericProperty, AliasProperty, BooleanProperty, \
-    ColorProperty
+from kivy.properties import ObjectProperty, StringProperty, OptionProperty, NumericProperty, AliasProperty, \
+    BooleanProperty, ColorProperty
 
 from kivy.uix.button import Button
 
@@ -188,8 +185,7 @@ Builder.load_string("""
                     AnchorLayout:
                         id: ContentPanel
                         anchor_x: 'left'
-                        anchor_y: 'top'
-                    
+                        anchor_y: 'top'                   
 """)
 
 
