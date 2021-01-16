@@ -9,6 +9,8 @@ from kivy.properties import ObjectProperty, StringProperty, OptionProperty, \
 
 from kivy.uix.button import Button
 
+from kivy.animation import Animation
+
 
 class ContentPage:
     def __init__(self, index, label, icon, content):
@@ -55,6 +57,12 @@ Builder.load_string("""
     background_color: 0, 0, 0, 1
 
     Image:
+        source: 'assets/context_notify_frame.png'
+        x: self.parent.x
+        y: self.parent.y 
+        color: root._notify_color
+
+    Image:
         #:set l_active 64
         #:set l_inactive 48
         source: root.icon_path
@@ -70,6 +78,30 @@ Builder.load_string("""
 
 
 class ContextButton(Button):
+    notify_state = OptionProperty("None", options=["None",
+                                                   "Info",
+                                                   "Warning",
+                                                   "Critical",
+                                                   "Alert"])
+
+    notify_colors = {
+        "None": [0 / 256, 0 / 256, 0 / 256, 1],
+        "Info": [0 / 256, 132 / 256, 176 / 256, 1],
+        "Warning": [249 / 256, 176 / 256, 0 / 256, 1],
+        "Critical": [228 / 256, 5 / 256, 41 / 256, 1],
+        "Alert": [228 / 256, 5 / 256, 41 / 256, 1]
+    }
+
+    def on_notify_state(self, _instance, value):
+        if value == "Alert":
+            self._notify_color = [0, 0, 0, 0]
+            self._alert_anim.start(self)
+        else:
+            self._alert_anim.cancel(self)
+            self._notify_color = self.notify_colors[value]
+
+    _notify_color = ColorProperty()
+
     icon_active_color = ColorProperty([249 / 256, 176 / 256, 0 / 256, 1])
     icon_inactive_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
     icon_path = StringProperty(None)
@@ -82,7 +114,14 @@ class ContextButton(Button):
         self.index = index
         self.icon_path = icon_path
 
+        # Alert animation
+        anim_in = Animation(_notify_color=[228 / 256, 5 / 256, 41 / 256, 1], duration=1., t='out_cubic')
+        anim_out = Animation(_notify_color=[228 / 256, 5 / 256, 41 / 256, 0], duration=1., t='in_cubic')
+        self._alert_anim = anim_in + anim_out
+        self._alert_anim.repeat = True
+
         super(Button, self).__init__(**kwargs, text="")
+        self.on_notify_state(self, "None")
 
 
 Builder.load_string("""
@@ -166,7 +205,7 @@ class GlobalContentArea(AnchorLayout):
     :attr:`background_color` is a :class:`~kivy.properties.ColorProperty` and
     defaults to [1, 1, 1, 1].
     """
-    border_color = ColorProperty([77/256, 77/256, 76/256, 1])
+    border_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
     """Border color, in the format (r, g, b, a).
 
     :attr:`border_color` is a :class:`~kivy.properties.ColorProperty` and
