@@ -129,8 +129,6 @@ Builder.load_string("""
 <GlobalContentArea>:
     anchor_y: 'top'
     anchor_x: 'left'
-    size_hint: 1, 1
-    pos_hint: {'center_x': .5, 'center_y': .5}
     
     canvas:
         #:set border_spacing 10
@@ -157,34 +155,27 @@ Builder.load_string("""
  
         StackLayout:
             id: ContextButtons
-            size: [root.tab_width-1, 50]
-            size_hint_y: None
-            #anchor_x: 'left'
-            orientation: 'lr-bt'
-       
-        AnchorLayout:
-            size: [root.width - root.tab_width-4, 50]
+            size: [root.tab_width-1, root.height]
             size_hint_x: None
-            anchor_y: 'top'
+            orientation: 'lr-bt'      
             
-            BoxLayout: 
-                orientation: 'vertical'
-                spacing: 5
-                
-                AnchorLayout:
-                    id: StatusBar
-                    size: [300, root.status_height - 1]
-                    size_hint_y: None
-                    anchor_y: 'top'
+        BoxLayout: 
+            orientation: 'vertical'
+            spacing: 5
+
+            AnchorLayout:
+                size: [root.width - root.tab_width-4, root.status_height]
+                size_hint_x: None
+                size_hint_y: None
+                anchor_y: 'top'   
+                anchor_x: 'left'         
+                id: StatusBar
     
-                AnchorLayout:          
-                    size: [300, root.height - root.status_height - 4]
-                    size_hint_y: None
-                    anchor_x: 'left'
-                    anchor_y: 'top'
-                    
-                    RelativeLayout:
-                        id: ContentPanel
+            AnchorLayout:          
+                size: [root.width - root.tab_width-4, root.height - root.status_height - 4]
+                anchor_x: 'left'
+                anchor_y: 'top'
+                id: ContentPanel
 """)
 
 
@@ -232,7 +223,7 @@ class GlobalContentArea(AnchorLayout):
     defaults to 64.
     '''
 
-    status_height = NumericProperty('50dp')
+    status_height = NumericProperty('50px')
     '''Specifies the height of the status bar.
 
     :attr:`status_height` is a :class:`~kivy.properties.NumericProperty` and
