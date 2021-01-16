@@ -60,11 +60,12 @@ Builder.load_string("""
         source: 'assets/context_notify_frame.png'
         x: self.parent.x
         y: self.parent.y 
+        size: (64, 64)
         color: root._notify_color
 
     Image:
-        #:set l_active 64
-        #:set l_inactive 48
+        #:set l_active 48
+        #:set l_inactive 32
         source: root.icon_path
         x:
             self.parent.x + (self.parent.width / 2) \
@@ -130,8 +131,6 @@ Builder.load_string("""
     anchor_x: 'left'
     size_hint: 1, 1
     pos_hint: {'center_x': .5, 'center_y': .5}
-    tab_width: 100
-    tab_height: 100
     
     canvas:
         #:set border_spacing 10
@@ -219,18 +218,18 @@ class GlobalContentArea(AnchorLayout):
     :attr:`current_page` is an :class:`~kivy.AliasProperty`, read-only.
     """
 
-    tab_height = NumericProperty('100dp')
+    tab_height = NumericProperty('64px')
     '''Specifies the height of the tab header.
 
     :attr:`tab_height` is a :class:`~kivy.properties.NumericProperty` and
-    defaults to 100.
+    defaults to 64.
     '''
 
-    tab_width = NumericProperty('100dp', allownone=True)
+    tab_width = NumericProperty('64px', allownone=True)
     '''Specifies the width of the tab header.
 
     :attr:`tab_width` is a :class:`~kivy.properties.NumericProperty` and
-    defaults to 100.
+    defaults to 64.
     '''
 
     status_height = NumericProperty('50dp')
