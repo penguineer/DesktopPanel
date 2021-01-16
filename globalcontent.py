@@ -1,6 +1,7 @@
 from kivy.lang import Builder
 
 from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.relativelayout import RelativeLayout
 from kivy.properties import ObjectProperty, StringProperty, OptionProperty, NumericProperty, AliasProperty, \
     BooleanProperty, ColorProperty
 
@@ -9,55 +10,43 @@ from kivy.uix.button import Button
 from kivy.animation import Animation
 
 
-class ContentPage:
-    def __init__(self, label, icon, content):
-        self._label = label
-        self._icon = icon
-        self._content = content
+class ContentPage(RelativeLayout):
+    label = StringProperty(None)
+    icon = StringProperty(None)
+
+    active = BooleanProperty(False)
+
+    def on_active(self, _instance, value):
+        if self.btn is not None:
+            self.btn.active = value
+
+    notification = OptionProperty("None", options=["None",
+                                                   "Info",
+                                                   "Warning",
+                                                   "Critical",
+                                                   "Alert"])
+
+    def on_notification(self, _instance, state):
+        if self.btn is not None:
+            self.btn.notify_state = state
+
+    btn = ObjectProperty(None, rebind=True)
+
+    def on_btn(self, _instance, value):
+        if value is not None:
+            value.notify_state = self.notification
+            value.active = self.active
+
+    def __init__(self, **kwargs):
+        super(RelativeLayout, self).__init__(**kwargs)
 
         self._btn = None
 
     def create_context_button(self, length, cb):
-        self._btn = ContextButton(icon_path=self._icon,
-                                  on_press=cb,
-                                  size=(length, length))
-        return self._btn
-
-    @property
-    def label(self):
-        return self._label
-
-    @property
-    def icon(self):
-        return self._icon
-
-    @property
-    def content(self):
-        return self._content
-
-    @property
-    def btn(self):
-        return self._btn
-
-    @property
-    def notification(self):
-        return str(self._btn.notify_state)
-
-    @notification.setter
-    def notification(self, state):
-        self._btn.notify_state = state
-
-    @property
-    def active(self):
-        return self._btn.active
-
-    def on_active(self, is_active):
-        pass
-
-    @active.setter
-    def active(self, is_active):
-        self._btn.active = is_active
-        self.on_active(is_active)
+        self.btn = ContextButton(icon_path=self.icon,
+                                 on_press=cb,
+                                 size=(length, length))
+        return self.btn
 
 
 Builder.load_string("""
@@ -162,7 +151,7 @@ Builder.load_string("""
                 self.width-border_spacing, self.height - self.status_height - 2
             width: 1
             cap: 'none'
-            
+
     BoxLayout:
         orientation: 'horizontal'
         spacing: 5
@@ -195,10 +184,8 @@ Builder.load_string("""
                     anchor_x: 'left'
                     anchor_y: 'top'
                     
-                    AnchorLayout:
+                    RelativeLayout:
                         id: ContentPanel
-                        anchor_x: 'left'
-                        anchor_y: 'top'                   
 """)
 
 
@@ -261,13 +248,13 @@ class GlobalContentArea(AnchorLayout):
 
     def set_page(self, page):
         if self._current_page is not None:
-            self.ids.ContentPanel.remove_widget(self._current_page.content)
+            self.ids.ContentPanel.remove_widget(self._current_page)
             self._current_page.active = False
 
         self._current_page = self._pages[page]
 
-        self.ids.ContentPanel.add_widget(self._current_page.content)
         self._current_page.active = True
+        self.ids.ContentPanel.add_widget(self._current_page)
 
     def register_content(self, page):
         index = len(self._pages)
