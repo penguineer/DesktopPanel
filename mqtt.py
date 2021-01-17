@@ -19,6 +19,8 @@ def add_topic_callback(mqttc, topic, cb):
 
 def on_connect(mqttc, _userdata, _flags, rc):
     print("MQTT client connected with code %s" % rc)
+    set_tray_icon_color(mqttc, _userdata)
+
     for topic in MQTT_TOPICS:
         mqttc.subscribe(topic)
 
@@ -36,6 +38,26 @@ def create_client(config):
     client.loop_start()
 
     return client
+
+
+def update_tray_icon(mqttc, tray_icon):
+    mqttc.user_data_set(tray_icon)
+    set_tray_icon_color(mqttc, tray_icon)
+
+
+def set_tray_icon_color(mqttc, tray_icon):
+    if tray_icon is None:
+        return
+
+    tray_icon.icon_color = [77 / 256, 77 / 256, 76 / 256, 1]
+
+    if mqttc is None:
+        return
+
+    if mqttc.is_connected():
+        tray_icon.icon_color = [0 / 256, 163 / 256, 86 / 256, 1]
+    else:
+        tray_icon.icon_color = [228 / 256, 5 / 256, 41 / 256, 1]
 
 
 def topic_matches_sub(sub, topic):
