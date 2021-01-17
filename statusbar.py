@@ -52,12 +52,6 @@ Builder.load_string("""
 <TrayBar>:
     orientation: 'tb-rl'
     size_hint_x: None
-    
-    Label:
-        size_hint_x: None
-        size: (50, 50)
-        text: 'L'
-    
 """)
 
 
