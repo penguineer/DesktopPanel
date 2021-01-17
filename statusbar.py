@@ -52,7 +52,7 @@ class DateTimeDisplay(BoxLayout):
 Builder.load_string("""
 <TrayBar>:
     orientation: 'tb-rl'
-    size_hint_x: None
+    size_hint: None, 1
 """)
 
 
