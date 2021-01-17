@@ -119,6 +119,11 @@ Builder.load_string("""
     TrayBar:
         size_hint_x: None
         id: tray_bar
+        
+    Label:
+        # This is a placeholder to limit the status bar on the right side
+        size_hint_x: None
+        size: [10, 0]
 """)
 
 
