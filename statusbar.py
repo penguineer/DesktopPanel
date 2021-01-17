@@ -4,6 +4,7 @@ from kivy.lang import Builder
 
 from kivy.uix.stacklayout import StackLayout
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.relativelayout import RelativeLayout
 from kivy.properties import StringProperty, ColorProperty
 from kivy.clock import Clock
 
@@ -67,6 +68,42 @@ class TrayBar(StackLayout):
 
     def remove_widget(self, widget):
         pass
+
+
+Builder.load_string("""
+<TrayIcon>:
+    size_hint: None, None
+    size: 32, 48
+
+    Image:
+        size_hint: None, None
+        size: 32, 32
+        pos: 0, 16
+        source: root.icon
+        #source: 'assets/mqtt_icon_64px.png'
+        keep_ratio: True
+        color: root.icon_color
+
+    Label:
+        size_hint: None, None
+        size: 32, 16
+        pos: 0, 0
+        text: root.label
+        font_size: 10        
+        color: root.icon_color
+""")
+
+
+class TrayIcon(RelativeLayout):
+    label = StringProperty(None)
+    icon = StringProperty(None)
+    icon_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
+
+    def __init__(self, label=None, icon=None, **kwargs):
+        self.label = label
+        self.icon = icon
+
+        super(RelativeLayout, self).__init__(**kwargs)
 
 
 Builder.load_string("""
