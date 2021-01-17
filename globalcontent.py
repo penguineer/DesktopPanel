@@ -267,3 +267,7 @@ class GlobalContentArea(AnchorLayout):
         # Register status bar if one was given
         if self._statusbar is not None:
             self.ids.StatusBar.add_widget(self._statusbar)
+
+    @property
+    def status_bar(self):
+        return self._statusbar
