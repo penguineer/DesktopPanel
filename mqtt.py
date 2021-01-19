@@ -25,6 +25,11 @@ def on_connect(mqttc, _userdata, _flags, rc):
         mqttc.subscribe(topic)
 
 
+def on_disconnect(mqttc, _userdata, rc):
+    print("MQTT client disconnected with code %s" % rc)
+    set_tray_icon_color(mqttc, _userdata)
+
+
 def create_client(config):
     if "MQTT" not in config.keys():
         print("Missing MQTT section in configuration. See template for an example.")
@@ -34,6 +39,7 @@ def create_client(config):
 
     client = mqtt.Client()
     client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.connect(host, 1883, 60)
     client.loop_start()
 
