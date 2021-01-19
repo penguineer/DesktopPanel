@@ -42,7 +42,11 @@ def create_client(config):
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
-    client.connect(host, 1883, 60)
+    try:
+        client.connect(host, 1883, 60)
+    except ConnectionRefusedError as e:
+        print(f"Failed to connect to MQTT client, will try again: %s" % e)
+
     client.loop_start()
 
     return client
