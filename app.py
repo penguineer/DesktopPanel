@@ -66,26 +66,165 @@ class SystemPage(globalcontent.ContentPage):
 
 
 Builder.load_string("""
+<IssueEntry>
+    orientation: 'horizontal'
+    size_hint: 1, None
+    spacing: 4
+        
+    Label:
+        text: root.issue_id
+        size: 40, 0
+        size_hint_x: None
+        text_size: self.size[0]-12, self.size[1]
+        halign: 'right'
+        valign: 'center'
+        font_size: 14
+        font_name: 'assets/FiraMono-Regular.ttf'
+        color: root.id_color
+
+        canvas.before:
+            Color:
+                rgba: root.id_background
+            RoundedRectangle:
+                pos: self.pos[0] + 2, self.pos[1] + 1                
+                size: self.size[0] - 4, self.size[1] - 2
+                radius: [5,5]        
+    
+    Label:
+        text: root.issue_label
+        text_size: self.size[0], self.size[1]
+        halign: 'left'
+        valign: 'center'
+        font_size: 14
+        color: root.label_color
+
+<IssueList>
+    orientation: 'vertical'
+    size: 300, 300
+    padding: 4
+    spacing: 4
+
+    canvas.before:
+        Color:
+            rgba: root.border_color
+        Line:
+            rounded_rectangle: self.pos[0]+2, self.pos[1]+2, self.size[0]-4, self.size[1]-4, 5, 100
+        Line:
+            points: 
+                root.pos[0] + 6, \\ 
+                root.pos[1] + root.size[1] - 24 - 4, \\ 
+                root.pos[0] + root.size[0] - 6, \\ 
+                root.pos[1] + root.size[1] - 24 - 4 
+                
+    Label:
+        text: root.issue_list_label
+        size_hint: 1, None
+        size: 0, 24
+        color: root.header_color
+        bold: True
+
+    RecycleView:    
+        id: rv
+        data: root.entries
+        viewclass: 'IssueEntry'
+        size_hint: 1, 1
+    
+        RecycleBoxLayout:
+            orientation: 'vertical'
+            default_size: 0, 20
+            
+            
+
 <GtdPage>:
     label: 'system'
     icon: 'assets/icon_gtd.png'
 
-    Label:
-        text: 'GTD'
+    BoxLayout:
+        orientation: 'horizontal'
+
+        Label:
+            text: ''
+            
+        IssueList:
+            size_hint: None, 1           
 """)
+
+from kivy.properties import StringProperty, ListProperty, ColorProperty
+from kivy.uix.boxlayout import BoxLayout
+
+
+class IssueEntry(BoxLayout):
+    issue_label = StringProperty()
+    issue_id = StringProperty()
+
+#    id_color = ColorProperty([0 / 256, 0 / 256, 0 / 256, 1])
+    id_color = ColorProperty([256 / 256, 256 / 256, 256 / 256, 1])
+#    id_background = ColorProperty([0 / 256, 132 / 256, 176 / 256, 1])
+    id_background = ColorProperty([24 / 256, 56 / 256, 107 / 256, 1])
+    label_color = ColorProperty([256 / 256, 256 / 256, 256 / 256, 1])
+
+
+class IssueList(BoxLayout):
+    issue_list_label = StringProperty("GTD")
+    entries = ListProperty()
+
+    border_color = ColorProperty([249 / 256, 176 / 256, 0 / 256, 1])
+    header_color = ColorProperty([249 / 256, 176 / 256, 0 / 256, 1])
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.issue_list = None
+        with open("issuelist.json", "r") as f:
+            self.update_issue_list(json.load(f))
+
+    def update_issue_list(self, issue_list):
+        self.issue_list = issue_list
+
+        self.issue_list_label = issue_list['label']
+        self.entries.clear()
+
+        for issue in issue_list['issues']:
+            self.entries.append({
+                'opacity': 1,
+                'issue_id': str(issue['id']),
+                'issue_label': issue['label'],
+                'size_hint': [1, None]
+            })
+
+        self.entries.append({
+            'issue_id': '',
+            'issue_label': '',
+            'opacity': 0,
+            'size_hint': [1, 1]
+        })
+
+        Clock.schedule_once(lambda dt: self.ids.rv.refresh_from_data())
 
 
 class GtdPage(globalcontent.ContentPage):
-    pass
+
+    mqttc = ObjectProperty(None)
+
+
+
 
 
 class TabbedPanelApp(App):
     mqtt_icon = ObjectProperty(None)
 
+    mqttc = ObjectProperty(None)
+
+    def __init__(self, mqttc, **kwargs):
+        super().__init__(**kwargs)
+
+        self.mqttc = mqttc
+
     def build(self):
         home_page = HomePage()
         system_page = SystemPage()
         gtd_page = GtdPage()
+        gtd_page.mqttc = self.mqttc
 
         ca = globalcontent.GlobalContentArea()
         Clock.schedule_once(lambda dt: ca.register_content(home_page))
@@ -96,6 +235,8 @@ class TabbedPanelApp(App):
 
         self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.mqtt_icon)
+
+        Clock.schedule_once(lambda dt: ca.set_page(2))
 
         return ca
 
@@ -121,7 +262,7 @@ def main():
     client = mqtt.create_client(mqtt_config)
 
     # TODO build and run app
-    app = TabbedPanelApp()
+    app = TabbedPanelApp(client)
     app.bind(mqtt_icon=lambda i, v: mqtt.update_tray_icon(client, v))
 
     app.run()
