@@ -9,9 +9,11 @@ import signal
 import sys
 
 import json
+from functools import partial
 
 import mqtt
 import globalcontent
+from pingboard import PingBoardHandler
 from statusbar import StatusBar, TrayIcon
 
 from kivy.config import Config
@@ -207,9 +209,6 @@ class GtdPage(globalcontent.ContentPage):
     mqttc = ObjectProperty(None)
 
 
-
-
-
 class TabbedPanelApp(App):
     mqtt_icon = ObjectProperty(None)
 
@@ -219,6 +218,13 @@ class TabbedPanelApp(App):
         super().__init__(**kwargs)
 
         self.mqttc = mqttc
+
+        self._pbh = PingBoardHandler(
+            f12=partial(self.flash,  1, [1, 6, 0]),
+            f11=partial(self.flash, 2, [5, 4, 0]),
+            f10=partial(self.flash, 3, [3, 0, 0]),
+            f9=partial(self.flash, 4, [0, 1, 12])
+        )
 
     def build(self):
         home_page = HomePage()
@@ -238,7 +244,16 @@ class TabbedPanelApp(App):
 
         Clock.schedule_once(lambda dt: ca.set_page(2))
 
+        ca.add_widget(self._pbh)
+
         return ca
+
+    def flash(self, sw, color):
+        succ = self._pbh.set_color(sw, color)
+        print(succ)
+        if succ:
+            Clock.schedule_once(lambda dt: partial(self._pbh.set_color, sw, [0, 0, 0])(),
+                                timeout=1)
 
 
 def main():
