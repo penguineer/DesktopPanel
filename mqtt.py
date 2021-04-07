@@ -33,11 +33,10 @@ def on_disconnect(mqttc, _userdata, rc):
 
 
 def create_client(config):
-    if "MQTT" not in config.keys():
-        print("Missing MQTT section in configuration. See template for an example.")
-        sys.exit(1)
+    if "host" not in config:
+        raise ValueError("Missing MQTT host configuration! See template for an example.")
 
-    host = config.get("MQTT", "host")
+    host = config.get("host")
 
     client = mqtt.Client()
     client.on_connect = on_connect

@@ -8,7 +8,7 @@
 import signal
 import sys
 
-import configparser
+import json
 
 import mqtt
 
@@ -39,10 +39,13 @@ def main():
         './resources/FiraSans-Regular.ttf'
     ])
 
-    config = configparser.ConfigParser()
-    config.read("desktop-panel.cfg")
+    with open("desktop-panel.cfg", "r") as f:
+        config = json.load(f)
 
-    client = mqtt.create_client(config)
+    if 'mqtt' not in config:
+        raise ValueError("Missing mqtt section in configuration! See template for an example.")
+    mqtt_config = config.get('mqtt')
+    client = mqtt.create_client(mqtt_config)
 
     # TODO build and run app
 
