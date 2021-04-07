@@ -1,2 +1,5 @@
-[MQTT]
-host = <MQTT Host>
+{
+  "mqtt": {
+    "host": "<MQTT Host>"
+  }
+}
