@@ -215,20 +215,30 @@ class TabbedPanelApp(App):
 
     mqttc = ObjectProperty(None)
 
+    active_presence = StringProperty(None)
+    requested_presence = StringProperty(None)
+
     def __init__(self, mqttc, **kwargs):
         super().__init__(**kwargs)
 
         self.mqttc = mqttc
 
         self.ca = None
+        self.pr_sel = None
 
-        self._pbh = PingBoardHandler(
-            f12=partial(self.flash,  1, [1, 6, 0]),
-            f11=partial(self.flash, 2, [5, 4, 0]),
-            f10=partial(self.flash, 3, [3, 0, 0]),
-            f9=partial(self.flash, 4, [0, 1, 12])
-        )
+        self._pbh = PingBoardHandler()
+        self._pbh.callbacks = [
+            partial(self.popup),
+            partial(self.flash, 2, [3, 0, 0]),
+            partial(self.flash, 1, [5, 4, 0]),
+            partial(self.flash, 0, [1, 6, 0])
+        ]
         # f9=partial(self.flash, 4, [0, 1, 12])
+
+        self.bind(active_presence=self._on_active_presence)
+        self.property('active_presence').dispatch(self)
+
+        self.bind(requested_presence=self._on_presence_request)
 
     def build(self):
         home_page = HomePage()
@@ -241,7 +251,11 @@ class TabbedPanelApp(App):
         Clock.schedule_once(lambda dt: ca.register_content(system_page))
         Clock.schedule_once(lambda dt: ca.register_content(gtd_page))
 
-        ca.register_status_bar(StatusBar())
+        sb = StatusBar()
+        ca.register_status_bar(sb)
+        self.bind(active_presence=sb.ids.presence.setter('active_presence'))
+        self.property('active_presence').dispatch(self)
+        sb.ids.presence.touch_cb = self.popup
 
         self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.mqtt_icon)
@@ -254,11 +268,62 @@ class TabbedPanelApp(App):
         return ca
 
     def flash(self, sw, color):
-        succ = self._pbh.set_color(sw, color)
-        print(succ)
-        if succ:
-            Clock.schedule_once(lambda dt: partial(self._pbh.set_color, sw, [0, 0, 0])(),
-                                timeout=1)
+        self._set_led(sw, color)
+        Clock.schedule_once(lambda dt: partial(self._set_led, sw, None)(),
+                            timeout=1)
+
+    def _set_led(self, sw, color=None):
+        if color is None:
+            color = [0, 0, 0]
+
+        self._pbh.color[sw] = color
+
+    def select(self, index):
+        Clock.schedule_once(lambda dt: self.ca.set_page(index))
+
+    def popup(self):
+        if self.pr_sel is not None and self.pr_sel.is_inactive():
+            self.pr_sel = None
+
+        if self.pr_sel is None:
+            self.pr_sel = PresenceDlg()
+
+            # Don't do this bind:
+            #   self.bind(active_presence=self.pr_sel.setter('active_presence'))
+            # This results in dangling property binds and repeated calls of inactive widgets.
+
+            self.pr_sel.active_presence = self.active_presence
+            self.pr_sel.requested_presence = self.requested_presence
+            self.pr_sel.bind(requested_presence=self.setter('requested_presence'))
+
+            self.pr_sel.open()
+        else:
+            self.pr_sel.dismiss()
+            self.pr_sel = None
+
+    def _on_presence_request(self, instance, value):
+        Clock.schedule_once(lambda dt: self.pr_sel is None or self.pr_sel.dismiss(), timeout=0.25)
+        Clock.schedule_once(lambda dt: setattr(self, 'active_presence', value), timeout=0.5)
+
+    def _on_active_presence(self, _instance, value):
+        if self.pr_sel is not None:
+            self.pr_sel.active_presence = value
+
+        #c = PresenceColor.color_for(value)
+        #if c is None:
+        #    color = [0, 0, 0]
+        #else:
+        #    color = list(map(lambda v: int(v*256), c[0:3]))
+
+        color = [0, 0, 0]
+        if value == "present":
+            color = [1, 6, 0]
+        elif value == "away":
+            color = [1, 1, 8]
+        elif value == "occupied":
+            color = [3, 1, 0]
+
+        self._set_led(3, color)
 
 
 def main():
