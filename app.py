@@ -14,6 +14,7 @@ from functools import partial
 import mqtt
 import globalcontent
 from pingboard import PingBoardHandler
+from presence import PresenceDlg, Presence
 from statusbar import StatusBar, TrayIcon
 
 from kivy.config import Config
@@ -225,6 +226,7 @@ class TabbedPanelApp(App):
             f10=partial(self.flash, 3, [3, 0, 0]),
             f9=partial(self.flash, 4, [0, 1, 12])
         )
+        # f9=partial(self.flash, 4, [0, 1, 12])
 
     def build(self):
         home_page = HomePage()
