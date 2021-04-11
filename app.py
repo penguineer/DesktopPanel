@@ -220,6 +220,8 @@ class TabbedPanelApp(App):
 
         self.mqttc = mqttc
 
+        self.ca = None
+
         self._pbh = PingBoardHandler(
             f12=partial(self.flash,  1, [1, 6, 0]),
             f11=partial(self.flash, 2, [5, 4, 0]),
@@ -248,6 +250,7 @@ class TabbedPanelApp(App):
 
         ca.add_widget(self._pbh)
 
+        self.ca = ca
         return ca
 
     def flash(self, sw, color):
