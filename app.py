@@ -103,6 +103,8 @@ class TabbedPanelApp(App):
         self._config = config
         self.mqttc = mqttc
 
+        self.ca = None
+
     def build(self):
         home_page = HomePage()
         system_page = SystemPage()
@@ -124,6 +126,7 @@ class TabbedPanelApp(App):
 
         Clock.schedule_once(lambda dt: ca.set_page(2))
 
+        self.ca = ca
         return ca
 
 
