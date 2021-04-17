@@ -116,3 +116,53 @@ class PresenceListItem(RelativeLayout):
             self.avatar_url = presence.avatar
             c = PresenceColor.color_for(presence.presence)
             self.presence_color = PresenceColor.absent_color_rgba if c is None else c
+
+
+Builder.load_string("""
+<PresenceList>:
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint: 1, 1
+
+        PresenceListItem:
+            handle: root.handle_self
+            presence_list: root.presence_list
+
+        Widget:
+            size_hint: None, None
+            size: 0, 16
+
+        BoxLayout:
+            id: others
+            orientation: 'vertical'
+            spacing: 8
+
+        Widget: 
+            size_hint: 1, 1
+
+""")
+
+
+class PresenceList(RelativeLayout):
+    handle_self = StringProperty(None)
+    handle_others = ListProperty(None)
+
+    presence_list = ListProperty(None)
+
+    def __init__(self, **kwargs):
+        super(PresenceList, self).__init__(**kwargs)
+
+        self.bind(handle_others=self._on_update_others)
+
+    def _on_update_others(self, _instance, _value):
+        if self.ids.others is None:
+            return
+
+        self.ids.others.clear_widgets()
+
+        for handle in self.handle_others:
+            pi = PresenceListItem()
+            pi.handle = handle
+            pi.presence_list = self.presence_list
+            self.bind(presence_list=pi.setter('presence_list'))
+            self.ids.others.add_widget(pi)
