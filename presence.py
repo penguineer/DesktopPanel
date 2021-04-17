@@ -166,3 +166,268 @@ class PresenceList(RelativeLayout):
             pi.presence_list = self.presence_list
             self.bind(presence_list=pi.setter('presence_list'))
             self.ids.others.add_widget(pi)
+
+
+Builder.load_string("""
+<PresenceSelector>:
+    #:set selbtn_size 180
+
+    size: [selbtn_size*2, selbtn_size*2 + 20*2]
+    size_hint: [None, None]
+
+    canvas:
+        Color:
+            rgb: root._btn_present_color
+        RoundedRectangle:
+            pos: self.size[0] - selbtn_size + 8, self.size[1] - selbtn_size + 8 - 20 
+            size: selbtn_size - 8, selbtn_size - 8
+            radius: [10]
+
+        Color:
+            rgb: root._btn_occupied_color
+        RoundedRectangle:
+            pos: self.size[0] - selbtn_size + 8, 20
+            size: selbtn_size - 8, selbtn_size - 8
+            radius: [10]
+
+        Color:
+            rgb: root._btn_away_color
+        RoundedRectangle:
+            pos: 0, 20
+            size: selbtn_size - 8, selbtn_size - 8
+            radius: [10]
+
+        Color:
+            rgb: root._btn_absent_color
+        RoundedRectangle:
+            pos: 0, self.size[1] - selbtn_size - 20 + 8
+            size: selbtn_size - 8, selbtn_size - 8
+            radius: [10]
+
+        Color:
+            rgb: root.present_color_rgba
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5+12, \
+                0, 90
+            width: 4
+        Line:
+            rounded_rectangle: 
+                self.size[0] / 2 + 10, self.size[0] / 2 + 10 + 20, \
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \
+                10
+            width: 2
+
+        Color:
+            rgb: root.occupied_color_rgba
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5+12, \
+                90, 180
+            width: 4
+        Line:
+            rounded_rectangle: 
+                self.size[0] / 2 + 10, 20, \
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \
+                10
+            width: 2
+
+        Color:
+            rgb: root.away_color_rgba
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5+12, \
+                180, 270
+            width: 4
+        Line:
+            rounded_rectangle: 
+                0, 20, \
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \
+                10
+            width: 2
+
+        Color:
+            rgb: root.absent_color_rgba
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5+12, \
+                270, 360
+            width: 4
+        Line:
+            rounded_rectangle: 
+                0, self.size[0] / 2 + 10 + 20, \
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \
+                10
+            width: 2
+
+
+        Color:
+            rgb: root.background_color
+        Line:
+            points:
+                self.size[0] / 2, 0, \
+                self.size[0] / 2, self.size[1]
+            width: 8     
+            cap: 'none'
+        Line:
+            points:
+                0, self.size[1] / 2, \
+                self.size[0], self.size[1] / 2
+            width: 8     
+            cap: 'none'
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5
+            width: 12
+
+        Color:
+            rgb: root._ind_circle_color
+        Ellipse:
+            pos: selbtn_size*0.5+4, selbtn_size*0.5+4+20
+            size: selbtn_size*1-8, selbtn_size*1-8
+
+
+
+
+    BoxLayout:
+        orientation: 'vertical'
+
+        BoxLayout:
+            orientation: 'horizontal'
+            size_x: 20
+            padding: [10, 0, 10, 0]
+
+            Label:
+                text: 'Absent'
+                halign: 'left'
+                text_size: self.size
+                color: root.text_color
+
+            Label:
+                text: 'Present'
+                halign: 'right'
+                text_size: self.size
+                color: root.text_color
+
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint: [None, None]
+            size: [selbtn_size*2, selbtn_size]
+
+            Button:
+                id: btn_absent
+                #text: 'Absent'
+                background_normal: ''
+                background_down: ''
+                background_color: 0, 0, 0, 0
+                on_press: root.requested_presence = "absent"
+
+            Button:
+                id: btn_present
+                #text: 'Present'
+                background_normal: ''
+                background_down: ''
+                background_color: 0, 0, 0, 0
+                on_press: root.requested_presence = "present"
+
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint: [None, None]
+            size: [selbtn_size*2, selbtn_size]
+
+            Button:
+                id: btn_away
+                #text: 'Away'
+                background_normal: ''
+                background_down: ''
+                background_color: 0, 0, 0, 0
+                on_press: root.requested_presence = "away"
+
+            Button:
+                id: btn_occupied
+                #text: 'Occupied'
+                background_normal: ''
+                background_down: ''
+                background_color: 0, 0, 0, 0
+                on_press: root.requested_presence = "occupied"
+
+        BoxLayout:
+            orientation: 'horizontal'
+            padding: [10, 0, 10, 0]
+
+            Label:
+                text: 'Away'
+                halign: 'left'
+                text_size: self.size
+                color: root.text_color
+
+            Label:
+                text: 'Occupied'
+                halign: 'right'
+                text_size: self.size
+                color: root.text_color
+""")
+
+
+class PresenceSelector(RelativeLayout, PresenceColor):
+    background_color = ColorProperty([0, 0, 0, 1])
+    """Background color, in the format (r, g, b, a).
+
+    :attr:`background_color` is a :class:`~kivy.properties.ColorProperty` and
+    defaults to [1, 1, 1, 1].
+    """
+
+    border_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
+    """Border color, in the format (r, g, b, a).
+
+    :attr:`border_color` is a :class:`~kivy.properties.ColorProperty` and
+    defaults to [77 / 256, 77 / 256, 76 / 256, 1].
+    """
+
+    text_color = ColorProperty([249 / 256, 176 / 256, 0 / 256, 1])
+    """Border color, in the format (r, g, b, a).
+
+    :attr:`text_color` is a :class:`~kivy.properties.ColorProperty` and
+    defaults to [249 / 256, 176 / 256, 0 / 256, 1].
+    """
+
+    active_presence = StringProperty(None)
+    requested_presence = StringProperty(None)
+
+    _ind_circle_color = ColorProperty([0, 0, 0, 1])
+    _btn_absent_color = ColorProperty([0, 0, 0, 1])
+    _btn_present_color = ColorProperty([0, 0, 0, 1])
+    _btn_occupied_color = ColorProperty([0, 0, 0, 1])
+    _btn_away_color = ColorProperty([0, 0, 0, 1])
+
+    def __init__(self, **kwargs):
+        super(PresenceSelector, self).__init__(**kwargs)
+
+        self.bind(active_presence=self._update_active_presence_color)
+        self.bind(requested_presence=self._update_requested_presence_color)
+
+    def _update_active_presence_color(self, instance, value):
+        c = self.color_for(value)
+        if c is None:
+            c = self.background_color
+        instance._ind_circle_color = c
+
+    def _update_requested_presence_color(self, instance, value):
+        instance._btn_absent_color = [0, 0, 0, 1]
+        instance._btn_present_color = [0, 0, 0, 1]
+        instance._btn_occupied_color = [0, 0, 0, 1]
+        instance._btn_away_color = [0, 0, 0, 1]
+
+        if value == "present":
+            instance._btn_present_color = self.present_color_rgba
+        elif value == "occupied":
+            instance._btn_occupied_color = self.occupied_color_rgba
+        elif value == "away":
+            instance._btn_away_color = self.away_color_rgba
+        elif value == "absent":
+            instance._btn_absent_color = self.absent_color_rgba
