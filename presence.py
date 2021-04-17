@@ -1,5 +1,5 @@
 from kivy.lang import Builder
-from kivy.properties import ColorProperty, StringProperty, ListProperty
+from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty
 from kivy.uix.relativelayout import RelativeLayout
 
 from dlg import FullscreenTimedModal
@@ -482,3 +482,59 @@ class PresenceDlg(FullscreenTimedModal):
     # noinspection PyMethodMayBeStatic
     def _on_requested_presence(self, instance, value):
         instance.ids.ps.requested_presence = value
+
+
+Builder.load_string("""
+<PresenceTrayWidget>:
+    size: 100, 50
+
+    #:set radius 5
+    #:set top 6
+    #:set bottom 8
+    canvas:
+        Color:
+            rgba: root._presence_color
+        Line:
+            rounded_rectangle: 
+                0, bottom, \
+                self.size[0], self.size[1]-top-bottom, \
+                radius
+            width: 1
+
+    Label:
+        text: root._presence_text if root._presence_text is not None else ""
+        color: root._presence_color 
+        font_name: 'assets/FiraMono-Regular.ttf'
+        pos: 0, 0+bottom-top
+""")
+
+
+class PresenceTrayWidget(RelativeLayout):
+    active_presence = StringProperty(None)
+
+    _presence_color = ColorProperty(PresenceColor.absent_color_rgba)
+    _presence_text = StringProperty(None)
+
+    touch_cb = ObjectProperty(None)
+
+    presence_texts = {
+        "absent": "Absent",
+        "present": "Present",
+        "occupied": "Occupied",
+        "away": "Away"
+    }
+
+    def __init__(self, **kwargs):
+        super(PresenceTrayWidget, self).__init__(**kwargs)
+        self.bind(active_presence=self._on_active_presence)
+
+    def _on_active_presence(self, _, value):
+        self._presence_color = PresenceColor.color_for(value)
+        self._presence_text = self.presence_texts.get(value, PresenceColor.absent_color_rgba)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            if self.touch_cb is not None:
+                self.touch_cb()
+            return True
+        return super(PresenceTrayWidget, self).on_touch_down(touch)
