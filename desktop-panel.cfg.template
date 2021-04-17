@@ -1,5 +1,15 @@
 {
   "mqtt": {
     "host": "<MQTT Host>"
+  },
+  "presence": {
+    "self": "<your own handle>>",
+    "others": ["<list>>", "<of>", "<other>", "<handles>"],
+    "people": {
+        "<first handle>": {
+            "view_name": "<visible name>",
+            "avatar": "<avatar url>"
+        }
+    }
   }
 }
