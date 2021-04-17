@@ -2,6 +2,8 @@ from kivy.lang import Builder
 from kivy.properties import ColorProperty, StringProperty, ListProperty
 from kivy.uix.relativelayout import RelativeLayout
 
+from dlg import FullscreenTimedModal
+
 
 class Presence:
     def __init__(self, handle, view_name=None, avatar=None, presence=None):
@@ -431,3 +433,52 @@ class PresenceSelector(RelativeLayout, PresenceColor):
             instance._btn_away_color = self.away_color_rgba
         elif value == "absent":
             instance._btn_absent_color = self.absent_color_rgba
+
+
+Builder.load_string("""
+<PresenceDlg>:
+    title: "Presence"
+    requested_presence: ps.requested_presence 
+
+    AnchorLayout:
+        anchor_x: 'right'
+        anchor_y: 'bottom'
+
+        padding: [8, 8]
+
+        PresenceSelector:        
+            id: ps
+            size_hint: [None, None]
+            active_presence: root.active_presence
+
+    AnchorLayout:
+        anchor_x: 'left'
+        anchor_y: 'top'
+
+        padding: [8, 70 + 20, 8, 8+20]
+
+        PresenceList:
+            size: 350, 400
+            size_hint: None, 1
+            presence_list: root.presence_list
+            handle_self: root.handle_self
+            handle_others: root.handle_others
+""")
+
+
+class PresenceDlg(FullscreenTimedModal):
+    active_presence = StringProperty(None)
+    requested_presence = StringProperty(None)
+
+    handle_self = StringProperty()
+    handle_others = ListProperty()
+    presence_list = ListProperty()
+
+    def __init__(self, **kwargs):
+        super(PresenceDlg, self).__init__(**kwargs)
+
+        self.bind(requested_presence=self._on_requested_presence)
+
+    # noinspection PyMethodMayBeStatic
+    def _on_requested_presence(self, instance, value):
+        instance.ids.ps.requested_presence = value
