@@ -213,14 +213,20 @@ class GtdPage(globalcontent.ContentPage):
 class TabbedPanelApp(App):
     mqtt_icon = ObjectProperty(None)
 
+    config = ObjectProperty(None)
     mqttc = ObjectProperty(None)
 
     active_presence = StringProperty(None)
     requested_presence = StringProperty(None)
 
-    def __init__(self, mqttc, **kwargs):
+    handle_self = StringProperty()
+    handle_others = ListProperty()
+    presence_list = ListProperty()
+
+    def __init__(self, config, mqttc, **kwargs):
         super().__init__(**kwargs)
 
+        self.config = config
         self.mqttc = mqttc
 
         self.ca = None
@@ -239,6 +245,8 @@ class TabbedPanelApp(App):
         self.property('active_presence').dispatch(self)
 
         self.bind(requested_presence=self._on_presence_request)
+
+        self._load_presence_config()
 
     def build(self):
         home_page = HomePage()
@@ -288,6 +296,10 @@ class TabbedPanelApp(App):
         if self.pr_sel is None:
             self.pr_sel = PresenceDlg()
 
+            self.pr_sel.handle_self = self.handle_self
+            self.pr_sel.handle_others = self.handle_others
+            self.pr_sel.presence_list = self.presence_list
+
             # Don't do this bind:
             #   self.bind(active_presence=self.pr_sel.setter('active_presence'))
             # This results in dangling property binds and repeated calls of inactive widgets.
@@ -306,8 +318,14 @@ class TabbedPanelApp(App):
         Clock.schedule_once(lambda dt: setattr(self, 'active_presence', value), timeout=0.5)
 
     def _on_active_presence(self, _instance, value):
+        if self.presence_list is not None and len(self.presence_list):
+            p = self.presence_list[0]
+            p.presence = value
+
         if self.pr_sel is not None:
             self.pr_sel.active_presence = value
+            self.pr_sel.presence_list = []
+            self.pr_sel.presence_list = self.presence_list
 
         #c = PresenceColor.color_for(value)
         #if c is None:
@@ -324,6 +342,31 @@ class TabbedPanelApp(App):
             color = [3, 1, 0]
 
         self._set_led(3, color)
+
+    def _load_presence_config(self):
+        if 'presence' not in self.config:
+            return
+
+        pr = self.config.get('presence', None)
+        if pr is None:
+            return
+
+        self.handle_self = pr.get('self', None)
+        self.handle_others = pr.get('others', [])
+
+        pl = []
+
+        people = pr.get('people', {})
+        if people is not None:
+            for p in [self.handle_self] + self.handle_others:
+                person = people.get(p, None)
+                if person is not None:
+                    presence = Presence(handle=p,
+                                        view_name=person.get('view_name', None),
+                                        avatar=person.get('avatar', None))
+                    pl.append(presence)
+
+        self.presence_list = pl
 
 
 def main():
@@ -347,7 +390,7 @@ def main():
     client = mqtt.create_client(mqtt_config)
 
     # TODO build and run app
-    app = TabbedPanelApp(client)
+    app = TabbedPanelApp(config, client)
     app.bind(mqtt_icon=lambda i, v: mqtt.update_tray_icon(client, v))
 
     app.run()
