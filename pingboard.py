@@ -2,6 +2,7 @@ from kivy.core.window import Window
 from kivy.uix.widget import Widget
 
 import serial.tools.list_ports
+from serial.serialutil import SerialException
 
 
 def find_arduino():
@@ -39,15 +40,19 @@ class PingBoardHandler(Widget):
     def set_color(self, sw, color):
         cmd_string = "{0:1d}{1:03d}{2:03d}{3:03d}\n".format(sw, color[0], color[1], color[2])
 
-        port = find_arduino()
+        try:
+            port = find_arduino()
 
-        if port is None:
-            print("Arduino could not be found!")
+            if port is None:
+                print("Arduino could not be found!")
+                return False
+
+            ser = serial.Serial(port.device, 115200, timeout=1)
+            ser.write(cmd_string.encode())
+            res = ser.readline().decode()
+            ser.close()
+
+            return res == "OK\n"
+        except SerialException as e:
+            print("Caught serial exception {}".format(e))
             return False
-
-        ser = serial.Serial(port.device, 115200, timeout=1)
-        ser.write(cmd_string.encode())
-        res = ser.readline().decode()
-        ser.close()
-
-        return res == "OK\n"
