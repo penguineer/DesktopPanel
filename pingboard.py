@@ -38,7 +38,7 @@ class PingBoardHandler(Widget):
                 cb()
 
     def set_color(self, sw, color):
-        cmd_string = "{0:1d}{1:03d}{2:03d}{3:03d}\n".format(sw, color[0], color[1], color[2])
+        cmd_string = "COL {0:1d} {1:03d} {2:03d} {3:03d}\n".format(sw, color[0], color[1], color[2])
 
         try:
             port = find_arduino()
