@@ -52,6 +52,9 @@ class PingBoardHandler(Widget):
             res = ser.readline().decode()
             ser.close()
 
+            if res != "OK\n":
+                print(res)
+
             return res == "OK\n"
         except SerialException as e:
             print("Caught serial exception {}".format(e))
