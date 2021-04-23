@@ -16,8 +16,6 @@ def find_arduino():
 class PingBoardHandler(Widget):
     def __init__(self, f9=None, f10=None, f11=None, f12=None, **kwargs):
         super(PingBoardHandler, self).__init__(**kwargs)
-        self._keyboard = Window.request_keyboard(self._keyboard_closed, self)
-        self._keyboard.bind(on_key_down=self._on_keyboard_down)
 
         self._callbacks = {
             'f9': f9,
@@ -26,9 +24,17 @@ class PingBoardHandler(Widget):
             'f12': f12,
         }
 
+        self._setup_keyboard()
+
+    def _setup_keyboard(self):
+        self._keyboard = Window.request_keyboard(self._keyboard_closed, self)
+        self._keyboard.bind(on_key_down=self._on_keyboard_down)
+
     def _keyboard_closed(self):
         self._keyboard.unbind(on_key_down=self._on_keyboard_down)
         self._keyboard = None
+
+        self._setup_keyboard()
 
     def _on_keyboard_down(self, _keyboard, keycode, _text, modifiers):
         if 'meta' in modifiers:
