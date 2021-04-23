@@ -1,4 +1,8 @@
+import contextlib
+from typing import Any
+
 from kivy.core.window import Window
+from kivy.properties import ListProperty, StringProperty
 from kivy.uix.widget import Widget
 
 import serial.tools.list_ports
@@ -14,15 +18,15 @@ def find_arduino():
 
 
 class PingBoardHandler(Widget):
+    callbacks = ListProperty([None]*4)
+
+    meta = StringProperty("meta")
+    keys = ListProperty(['f9', 'f10', 'f11', 'f12'])
+
     def __init__(self, f9=None, f10=None, f11=None, f12=None, **kwargs):
         super(PingBoardHandler, self).__init__(**kwargs)
 
-        self._callbacks = {
-            'f9': f9,
-            'f10': f10,
-            'f11': f11,
-            'f12': f12,
-        }
+        self.callbacks = [f9, f10, f11, f12]
 
         self._setup_keyboard()
 
@@ -37,11 +41,13 @@ class PingBoardHandler(Widget):
         self._setup_keyboard()
 
     def _on_keyboard_down(self, _keyboard, keycode, _text, modifiers):
-        if 'meta' in modifiers:
+        if self.meta in modifiers:
             kc = keycode[1]
-            cb = self._callbacks.get(kc, None)
-            if cb is not None:
-                cb()
+            with contextlib.suppress(ValueError):
+                idx = self.keys.index(kc)
+                cb: Any = self.callbacks[idx]
+                if cb is not None:
+                    cb()
 
     def set_color(self, sw, color):
         cmd_string = "COL {0:1d} {1:03d} {2:03d} {3:03d}\n".format(sw, color[0], color[1], color[2])
