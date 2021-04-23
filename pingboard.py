@@ -23,12 +23,17 @@ class PingBoardHandler(Widget):
     meta = StringProperty("meta")
     keys = ListProperty(['f9', 'f10', 'f11', 'f12'])
 
+    color = ListProperty([[0, 0, 0]]*4)
+
     def __init__(self, f9=None, f10=None, f11=None, f12=None, **kwargs):
         super(PingBoardHandler, self).__init__(**kwargs)
 
         self.callbacks = [f9, f10, f11, f12]
+        self.bind(color=self._update_color)
 
         self._setup_keyboard()
+
+        print(self.color)
 
     def _setup_keyboard(self):
         self._keyboard = Window.request_keyboard(self._keyboard_closed, self)
@@ -49,25 +54,35 @@ class PingBoardHandler(Widget):
                 if cb is not None:
                     cb()
 
-    def set_color(self, sw, color):
-        cmd_string = "COL {0:1d} {1:03d} {2:03d} {3:03d}\n".format(sw, color[0], color[1], color[2])
+    def _update_color(self, _instance, _value):
+        self._update_led_colors()
 
+    # noinspection PyMethodMayBeStatic
+    def _render_cmd_string(self, sw, color):
+        return "COL {0:1d} {1:03d} {2:03d} {3:03d}\n".format(sw, color[0], color[1], color[2])
+
+    def _update_led_colors(self):
         try:
             port = find_arduino()
 
             if port is None:
                 print("Arduino could not be found!")
-                return False
+                return
 
             ser = serial.Serial(port.device, 115200, timeout=1)
-            ser.write(cmd_string.encode())
-            res = ser.readline().decode()
+
+            for sw, color in enumerate(self.color, start=1):
+                cmd_string = self._render_cmd_string(sw, color)
+
+                ser.write(cmd_string.encode())
+                res = ser.readline().decode()
+
+                if res != "OK\n":
+                    print(res)
+
+                pass
+
             ser.close()
 
-            if res != "OK\n":
-                print(res)
-
-            return res == "OK\n"
         except SerialException as e:
             print("Caught serial exception {}".format(e))
-            return False
