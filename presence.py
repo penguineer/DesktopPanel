@@ -193,14 +193,14 @@ Builder.load_string("""
             radius: [10]
 
         Color:
-            rgb: root._btn_away_color
+            rgb: root._btn_absent_color
         RoundedRectangle:
             pos: 0, 20
             size: selbtn_size - 8, selbtn_size - 8
             radius: [10]
 
         Color:
-            rgb: root._btn_absent_color
+            rgb: root._btn_away_color
         RoundedRectangle:
             pos: 0, self.size[1] - selbtn_size - 20 + 8
             size: selbtn_size - 8, selbtn_size - 8
@@ -237,7 +237,7 @@ Builder.load_string("""
             width: 2
 
         Color:
-            rgb: root.away_color_rgba
+            rgb: root.absent_color_rgba
         Line:
             circle:
                 self.size[0] / 2, self.size[1] / 2, \
@@ -252,7 +252,7 @@ Builder.load_string("""
             width: 2
 
         Color:
-            rgb: root.absent_color_rgba
+            rgb: root.away_color_rgba
         Line:
             circle:
                 self.size[0] / 2, self.size[1] / 2, \
@@ -305,7 +305,7 @@ Builder.load_string("""
             padding: [10, 0, 10, 0]
 
             Label:
-                text: 'Absent'
+                text: 'Away'
                 halign: 'left'
                 text_size: self.size
                 color: root.text_color
@@ -322,12 +322,12 @@ Builder.load_string("""
             size: [selbtn_size*2, selbtn_size]
 
             Button:
-                id: btn_absent
-                #text: 'Absent'
+                id: btn_away
+                #text: 'Away'
                 background_normal: ''
                 background_down: ''
                 background_color: 0, 0, 0, 0
-                on_press: root.requested_presence = "absent"
+                on_press: root.requested_presence = "away"
 
             Button:
                 id: btn_present
@@ -343,12 +343,12 @@ Builder.load_string("""
             size: [selbtn_size*2, selbtn_size]
 
             Button:
-                id: btn_away
-                #text: 'Away'
+                id: btn_absent
+                #text: 'Absent'
                 background_normal: ''
                 background_down: ''
                 background_color: 0, 0, 0, 0
-                on_press: root.requested_presence = "away"
+                on_press: root.requested_presence = "absent"
 
             Button:
                 id: btn_occupied
@@ -363,7 +363,7 @@ Builder.load_string("""
             padding: [10, 0, 10, 0]
 
             Label:
-                text: 'Away'
+                text: 'Absent'
                 halign: 'left'
                 text_size: self.size
                 color: root.text_color
