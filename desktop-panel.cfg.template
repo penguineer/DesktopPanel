@@ -1,5 +1,8 @@
 {
   "mqtt": {
     "host": "<MQTT Host>"
+  },
+  "issuelist": {
+    "path": "<issue list path>"
   }
 }
