@@ -3,3 +3,5 @@ Kivy==2.0.0
 paho-mqtt>=1.5.1
 pyserial==3.5
 watchdog==2.1.7
+requests==2.26.0
+pytest==7.1.2
