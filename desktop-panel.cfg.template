@@ -2,7 +2,26 @@
   "mqtt": {
     "host": "<MQTT Host>"
   },
+  "amqp": {
+    "host": "<AMQP Host>",
+    "user": "<AMQP User>",
+    "passwd": "<AMQP Password>",
+    "declare": "true | false",
+    "command_channel": "<AMQP command channel>"
+  },
   "issuelist": {
     "path": "<issue list path>"
+  },
+  "presence": {
+    "svc": "<service url>",
+    "self": "<your own handle>",
+    "token": "<authentication token>",
+    "others": ["<list>>", "<of>", "<other>", "<handles>"],
+    "people": {
+        "<first handle>": {
+            "view_name": "<visible name>",
+            "avatar": "<avatar url>"
+        }
+    }
   }
 }
