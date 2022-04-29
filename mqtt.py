@@ -2,8 +2,8 @@ import sys
 
 import paho.mqtt.client as mqtt
 
+from kivy import Logger
 from kivy.clock import Clock
-
 
 MQTT_TOPICS = []
 
@@ -20,7 +20,7 @@ def add_topic_callback(mqttc, topic, cb):
 
 
 def on_connect(mqttc, _userdata, _flags, rc):
-    print("MQTT client connected with code %s" % rc)
+    Logger.info("MQTT: Client connected with code %s", rc)
     set_tray_icon_color(_userdata, status="connected")
 
     for topic in MQTT_TOPICS:
@@ -28,7 +28,7 @@ def on_connect(mqttc, _userdata, _flags, rc):
 
 
 def on_disconnect(mqttc, _userdata, rc):
-    print("MQTT client disconnected with code %s" % rc)
+    Logger.info("MQTT: Client disconnected with code %s", rc)
     set_tray_icon_color(_userdata, status="disconnected")
 
 
@@ -44,7 +44,7 @@ def create_client(config):
     try:
         client.connect(host, 1883, 60)
     except ConnectionRefusedError as e:
-        print(f"Failed to connect to MQTT client, will try again: %s" % e)
+        Logger.warning("MQTT: Failed to connect to MQTT client, will try again: %s", e)
 
     client.loop_start()
 

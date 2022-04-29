@@ -14,6 +14,7 @@ import mqtt
 import globalcontent
 from statusbar import StatusBar, TrayIcon
 
+from kivy import Logger
 from kivy.config import Config
 from kivy.app import App
 from kivy.core.window import Window
@@ -30,10 +31,10 @@ def sigint_handler(_signal, _frame):
     global running
 
     if running:
-        print("SIGINT received. Stopping the queue.")
+        Logger.info("SIGINT: SIGINT received. Stopping the queue.")
         running = False
     else:
-        print("Receiving SIGINT the second time. Exit.")
+        Logger.warn("SIGINT: Receiving SIGINT the second time. Exit.")
         sys.exit(0)
 
 
