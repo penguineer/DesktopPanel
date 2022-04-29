@@ -1,6 +1,7 @@
 import contextlib
 from typing import Any
 
+from kivy import Logger
 from kivy.core.window import Window
 from kivy.properties import ListProperty, StringProperty
 from kivy.uix.widget import Widget
@@ -33,7 +34,7 @@ class PingBoardHandler(Widget):
 
         self._setup_keyboard()
 
-        print(self.color)
+        Logger.info("PingBoard: %s", self.color)
 
     def _setup_keyboard(self):
         self._keyboard = Window.request_keyboard(self._keyboard_closed, self)
@@ -66,7 +67,7 @@ class PingBoardHandler(Widget):
             port = find_arduino()
 
             if port is None:
-                print("Arduino could not be found!")
+                Logger.warning("PingBoard: Arduino could not be found!")
                 return
 
             ser = serial.Serial(port.device, 115200, timeout=1)
@@ -78,11 +79,11 @@ class PingBoardHandler(Widget):
                 res = ser.readline().decode()
 
                 if res != "OK\n":
-                    print(res)
+                    Logger.info("PingBoard: %s", res)
 
                 pass
 
             ser.close()
 
         except SerialException as e:
-            print("Caught serial exception {}".format(e))
+            Logger.error("PingBoard: Caught serial exception %s", e)
