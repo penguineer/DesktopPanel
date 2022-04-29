@@ -5,10 +5,12 @@ from typing import Callable, Optional
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from kivy import Logger
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import StringProperty, ListProperty, ColorProperty
 from kivy.uix.boxlayout import BoxLayout
+
 
 
 Builder.load_string("""
@@ -149,7 +151,7 @@ class IssueList(BoxLayout):
                 self._observer.setup()
                 self._observer.on_modified(None)
             except FileNotFoundError as e:
-                print(e)
+                Logger.warning("Issues: %s", e)
                 self._border_mark(failed=True)
 
     def _border_mark(self, failed: bool) -> None:
@@ -201,8 +203,8 @@ class IssueListObserver(FileSystemEventHandler):
                 if self._failed_callback is not None:
                     self._failed_callback(False)
         except FileNotFoundError as e:
-            print(e)
+            Logger.warning("Issues: %s", e)
         except json.decoder.JSONDecodeError as e:
             if self._failed_callback is not None:
                 self._failed_callback(True)
-            print(e)
+            Logger.warning("Issues: %s", e)
