@@ -1,6 +1,13 @@
+""" Module for presence UI """
+
+from functools import partial
+
+from kivy import Logger
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty
 from kivy.uix.relativelayout import RelativeLayout
+from kivy.uix.widget import Widget
 
 from dlg import FullscreenTimedModal
 
@@ -538,3 +545,39 @@ class PresenceTrayWidget(RelativeLayout):
                 self.touch_cb()
             return True
         return super(PresenceTrayWidget, self).on_touch_down(touch)
+
+
+class PresencePingTechEmitter(Widget):
+    presence_updater = ObjectProperty(None)
+
+    requested_presence = StringProperty(None)
+    emission_result = ObjectProperty(None)
+    emission_error = StringProperty(None)
+
+    def __init__(self, presence_updater, **kwargs):
+        super(PresencePingTechEmitter, self).__init__(**kwargs)
+
+        if presence_updater is None:
+            raise ValueError("Updater must be provided!")
+
+        self.presence_updater = presence_updater
+
+        self.bind(requested_presence=self._on_requested_presence)
+
+    def _on_requested_presence(self, _, value):
+        if self.presence_updater:
+            Clock.schedule_once(lambda dt: partial(
+                self.presence_updater.update_status,
+                value,
+                None,
+                self._on_success,
+                self._on_error
+            )())
+
+    def _on_success(self, status):
+        self.emission_result = status
+        self.emission_error = None
+
+    def _on_error(self, error):
+        self.emission_error = error
+        Logger.error("Presence: Got error on presence update: %s", str(error))

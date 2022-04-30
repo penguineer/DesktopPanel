@@ -37,6 +37,16 @@ Each command has the following form:
 In the current implementation commands are Request-only, i.e. there is no generic (RPC) mechanism to respond to a command.
 This may change in future versions.
 
+### Known Commands
+
+* `presence popup` Toggles the presence dialog. This command has no arguments.
+
+## MQTT
+
+### Status update
+
+If an MQTT topic is provided in `mqtt.presence-topic` the presence status will be sent as raw status text.
+
 ## Resources
 
 Uses [Free Icons from the Streamline Icons Pack](https://streamlineicons.com/).

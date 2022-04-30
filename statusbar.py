@@ -114,6 +114,10 @@ Builder.load_string("""
     DateTimeDisplay:
         size_hint_x: None
         
+    PresenceTrayWidget:
+        id: presence
+        size_hint_x: None
+        
     Label:
         # This is a placeholder to stretch out the status bar
         

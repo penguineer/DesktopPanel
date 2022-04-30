@@ -1,6 +1,7 @@
 {
   "mqtt": {
-    "host": "<MQTT Host>"
+    "host": "<MQTT Host>",
+    "presence-topic": "<MQTT presence topic>"
   },
   "amqp": {
     "host": "<AMQP Host>",
