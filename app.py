@@ -13,6 +13,9 @@ import json
 import amqp
 import mqtt
 import globalcontent
+from page_gtd import GtdPage
+from page_home import HomePage
+from page_system import SystemPage
 from statusbar import StatusBar, TrayIcon
 
 from kivy import Logger
@@ -22,7 +25,6 @@ from kivy.core.window import Window
 
 from kivy.clock import Clock
 
-from kivy.lang import Builder
 from kivy.properties import ObjectProperty
 
 running = True
@@ -37,61 +39,6 @@ def sigint_handler(_signal, _frame):
     else:
         Logger.warn("SIGINT: Receiving SIGINT the second time. Exit.")
         sys.exit(0)
-
-
-Builder.load_string("""
-<HomePage>:
-    label: 'home'
-    icon: 'assets/icon_home.png'
-
-    Label:
-        text: 'HOME'
-""")
-
-
-class HomePage(globalcontent.ContentPage):
-    pass
-
-
-Builder.load_string("""
-<SystemPage>:
-    label: 'system'
-    icon: 'assets/icon_system.png'
-    
-    Label:
-        text: 'SYSTEM'            
-""")
-
-
-class SystemPage(globalcontent.ContentPage):
-    pass
-
-
-from kivy.properties import StringProperty, ListProperty
-
-
-Builder.load_string("""
-#:import IssueList issues.IssueList
-
-<GtdPage>:
-    label: 'system'
-    icon: 'assets/icon_gtd.png'
-
-    BoxLayout:
-        orientation: 'horizontal'
-
-        Label:
-            text: ''
-
-        IssueList:
-            issue_list_path: root.issue_list_path
-            size_hint: None, 1           
-""")
-
-
-class GtdPage(globalcontent.ContentPage):
-    mqttc = ObjectProperty(None)
-    issue_list_path = StringProperty("issuelist.json")
 
 
 class TabbedPanelApp(App):
