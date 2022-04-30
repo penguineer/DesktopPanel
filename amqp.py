@@ -286,7 +286,7 @@ class AmqpConnector(object):
                 # ACK dispatched
                 channel.basic_ack(delivery_tag=method.delivery_tag)
 
-        except json.decoder.JSONDecodeError as e:
+        except (json.decoder.JSONDecodeError, ValueError) as e:
             Logger.error("AMQP: Could not decode command snippet: %s", str(e))
             # ACK faulty to get them out of the queue
             channel.basic_ack(delivery_tag=method.delivery_tag)
