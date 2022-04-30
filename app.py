@@ -136,6 +136,10 @@ class TabbedPanelApp(App):
         return ca
 
 
+def command_log(cmd, args):
+    Logger.info("App: Received command %s with args %s.", cmd, args)
+
+
 async def main():
     signal.signal(signal.SIGINT, sigint_handler)
 
@@ -170,6 +174,7 @@ async def main():
     app.bind(amqp_icon=lambda i, v: amqp_conn.update_tray_icon(v))
 
     # TODO bind command handlers
+    cmd_dispatch.add_command_handler("test", command_log)
 
     await app.async_run()
 
