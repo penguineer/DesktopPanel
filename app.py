@@ -4,7 +4,7 @@
 # with Raspberry Pi and RPi Touch Screen
 
 # Author: Stefan Haun <tux@netz39.de>
-
+import asyncio
 import signal
 import sys
 
@@ -136,7 +136,7 @@ class TabbedPanelApp(App):
         return ca
 
 
-def main():
+async def main():
     signal.signal(signal.SIGINT, sigint_handler)
 
     Config.set('kivy', 'default_font', [
@@ -170,11 +170,15 @@ def main():
     app.bind(amqp_icon=lambda i, v: amqp_conn.update_tray_icon(v))
 
     # TODO bind command handlers
-    app.run()
+
+    await app.async_run()
 
     amqp_conn.stop()
     client.loop_stop()
 
 
 if __name__ == '__main__':
-    main()
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    asyncio.run(main())
