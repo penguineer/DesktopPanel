@@ -4,12 +4,13 @@
 # with Raspberry Pi and RPi Touch Screen
 
 # Author: Stefan Haun <tux@netz39.de>
-
+import asyncio
 import signal
 import sys
 
 import json
 
+import amqp
 import mqtt
 import globalcontent
 from statusbar import StatusBar, TrayIcon
@@ -95,6 +96,7 @@ class GtdPage(globalcontent.ContentPage):
 
 class TabbedPanelApp(App):
     mqtt_icon = ObjectProperty(None)
+    amqp_icon = ObjectProperty(None)
 
     mqttc = ObjectProperty(None)
 
@@ -125,13 +127,20 @@ class TabbedPanelApp(App):
         self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.mqtt_icon)
 
+        self.amqp_icon = TrayIcon(label='AMQP', icon="assets/rabbitmq_icon_64px.png")
+        ca.status_bar.tray_bar.register_widget(self.amqp_icon)
+
         Clock.schedule_once(lambda dt: ca.set_page(2))
 
         self.ca = ca
         return ca
 
 
-def main():
+def command_log(cmd, args):
+    Logger.info("App: Received command %s with args %s.", cmd, args)
+
+
+async def main():
     signal.signal(signal.SIGINT, sigint_handler)
 
     Config.set('kivy', 'default_font', [
@@ -151,14 +160,30 @@ def main():
     mqtt_config = config.get('mqtt')
     client = mqtt.create_client(mqtt_config)
 
+    amqp_access = amqp.AmqpAccessConfiguration.from_json_cfg(config)
+    amqp_resource = amqp.AmqpResourceConfiguration.from_json_cfg(config)
+    cmd_dispatch = amqp.AmqpCommandDispatch()
+    amqp_conn = amqp.AmqpConnector(amqp_access_cfg=amqp_access,
+                                   amqp_resource_cfg=amqp_resource,
+                                   dispatch=cmd_dispatch)
+    amqp_conn.setup()
+
     # TODO build and run app
     app = TabbedPanelApp(config, client)
     app.bind(mqtt_icon=lambda i, v: mqtt.update_tray_icon(client, v))
+    app.bind(amqp_icon=lambda i, v: amqp_conn.update_tray_icon(v))
 
-    app.run()
+    # TODO bind command handlers
+    cmd_dispatch.add_command_handler("test", command_log)
 
+    await app.async_run()
+
+    amqp_conn.stop()
     client.loop_stop()
 
 
 if __name__ == '__main__':
-    main()
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    asyncio.run(main())

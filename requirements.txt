@@ -5,3 +5,5 @@ pyserial==3.5
 watchdog==2.1.7
 requests==2.27.1
 pytest==7.1.2
+pika==1.2.1
+pika-stubs==0.1.3
