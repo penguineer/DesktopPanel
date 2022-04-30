@@ -53,6 +53,7 @@ Builder.load_string("""
 <TrayBar>:
     orientation: 'tb-rl'
     size_hint: None, 1
+    spacing: 5    
 """)
 
 
