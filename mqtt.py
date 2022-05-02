@@ -1,5 +1,3 @@
-import sys
-
 import paho.mqtt.client as mqtt
 
 from kivy import Logger
@@ -27,7 +25,7 @@ def on_connect(mqttc, _userdata, _flags, rc):
         mqttc.subscribe(topic)
 
 
-def on_disconnect(mqttc, _userdata, rc):
+def on_disconnect(_mqttc, _userdata, rc):
     Logger.info("MQTT: Client disconnected with code %s", rc)
     set_tray_icon_color(_userdata, status="disconnected")
 

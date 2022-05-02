@@ -99,9 +99,6 @@ class TrayBar(RelativeLayout):
         self.ids.stack.add_widget(widget)
         self.do_layout()
 
-    def remove_widget(self, widget):
-        pass
-
 
 Builder.load_string("""
 <TrayIcon>:
