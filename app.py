@@ -5,6 +5,7 @@
 
 # Author: Stefan Haun <tux@netz39.de>
 import asyncio
+from datetime import datetime
 import signal
 import sys
 
@@ -227,6 +228,12 @@ def command_log(cmd, args):
     Logger.info("App: Received command %s with args %s.", cmd, args)
 
 
+def command_screenshot(_cmd, _args):
+    name = "Screenshot {}.png".format(datetime.now())
+    Logger.info("Taking a screenshot to %s", name)
+    Window.screenshot(name=name)
+
+
 async def main():
     signal.signal(signal.SIGINT, sigint_handler)
 
@@ -262,6 +269,7 @@ async def main():
 
     # TODO bind command handlers
     cmd_dispatch.add_command_handler("test", command_log)
+    cmd_dispatch.add_command_handler("screenshot", command_screenshot)
     cmd_dispatch.add_command_handler("presence popup", app.popup_handler)
 
     await app.async_run()
