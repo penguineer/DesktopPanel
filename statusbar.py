@@ -8,10 +8,10 @@ from kivy.clock import Clock
 
 Builder.load_string("""
 <DateTimeDisplay>:
-    size: [130, 0]
+    size: [120, 0]
     BoxLayout:
         orientation: 'horizontal'
-        spacing: -60
+        spacing: -70
 
         BoxLayout:
             orientation: 'vertical'
@@ -19,7 +19,7 @@ Builder.load_string("""
 
             Label:
                 size_hint: None, None
-                size: 36, 36
+                size: 24, 36
                 canvas.before:
                     Color: 
                         rgb: root.text_color
