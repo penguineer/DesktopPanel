@@ -12,7 +12,6 @@ from kivy.properties import StringProperty, ListProperty, ColorProperty
 from kivy.uix.boxlayout import BoxLayout
 
 
-
 Builder.load_string("""
 <IssueEntry>
     orientation: 'horizontal'
