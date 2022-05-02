@@ -21,6 +21,9 @@ Builder.load_string("""
                 size_hint: None, None
                 size: 36, 36
                 canvas.before:
+                    Color: 
+                        rgb: root.text_color
+                
                     Rectangle:
                         pos: self.pos
                         size: self.size
