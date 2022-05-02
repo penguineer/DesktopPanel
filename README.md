@@ -39,6 +39,7 @@ This may change in future versions.
 
 ### Known Commands
 
+* `screenshot` Takes a screenshot and stores in the working directory. This command has no arguments.
 * `presence popup` Toggles the presence dialog. This command has no arguments.
 
 ## MQTT
