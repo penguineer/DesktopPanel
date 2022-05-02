@@ -8,9 +8,30 @@ from kivy.clock import Clock
 
 Builder.load_string("""
 <DateTimeDisplay>:
+    size: [130, 0]
     BoxLayout:
         orientation: 'horizontal'
         spacing: -60
+
+        BoxLayout:
+            orientation: 'vertical'
+            padding: 6
+
+            Label:
+                size_hint: None, None
+                size: 36, 36
+                canvas.before:
+                    Rectangle:
+                        pos: self.pos
+                        size: self.size
+                        source: 'assets/calendar.png'
+                color: root.text_color
+                font_size: 16
+                bold: True
+                text_size: [None, 28]
+                text: root.week_value
+
+            Widget:
 
         BoxLayout:
             orientation: 'vertical'
@@ -35,6 +56,7 @@ Builder.load_string("""
 class DateTimeDisplay(RelativeLayout):
     date_value = StringProperty('    -  -  ')
     time_value = StringProperty('  :  ')
+    week_value = StringProperty('00')
     text_color = ColorProperty([249 / 256, 176 / 256, 0 / 256, 1])
 
     def __init__(self, **kwargs):
@@ -44,10 +66,14 @@ class DateTimeDisplay(RelativeLayout):
         Clock.schedule_interval(lambda dt: self.update_datetime(), 1)
 
     def update_datetime(self):
-        datestr = str(datetime.now())
+        now = datetime.now()
 
+        datestr = str(now)
         self.date_value = datestr[0:10]
         self.time_value = f"%s:%s" % (datestr[11:13], datestr[14:16])
+
+        cal = datetime.now().isocalendar()
+        self.week_value = str(cal.week)
 
 
 Builder.load_string("""
