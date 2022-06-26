@@ -87,10 +87,11 @@ class SpaceStatusWidget(RelativeLayout):
 
         self._config = SpaceApiConfguration.from_json_cfg(config)
 
-        Clock.schedule_once(self._load_api)
+        if self._config:
+            Clock.schedule_once(self._load_api)
 
-        if self._config.interval() > 0:
-            self._clock = Clock.schedule_interval(self._load_api, self._config.interval())
+            if self._config.interval() > 0:
+                self._clock = Clock.schedule_interval(self._load_api, self._config.interval())
 
     def _update(self):
         if self._api is None:
