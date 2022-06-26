@@ -137,6 +137,8 @@ class TrayIcon(RelativeLayout):
 
 
 Builder.load_string("""
+#:import SpaceStatusWidget spacestatus.SpaceStatusWidget
+
 <StatusBar>:
     BoxLayout:
         orientation: 'horizontal'
@@ -149,6 +151,10 @@ Builder.load_string("""
 
         PresenceTrayWidget:
             id: presence
+            size_hint_x: None
+            
+        SpaceStatusWidget:
+            id: spacestatus
             size_hint_x: None
 
         Widget:
