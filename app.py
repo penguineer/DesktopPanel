@@ -105,6 +105,7 @@ class TabbedPanelApp(App):
         self.bind(active_presence=sb.ids.presence.setter('active_presence'))
         self.property('active_presence').dispatch(self)
         sb.ids.presence.touch_cb = self.popup_handler
+        sb.ids.spacestatus.load_config(self._config)
 
         self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.mqtt_icon)
