@@ -24,5 +24,10 @@
             "avatar": "<avatar url>"
         }
     }
+  },
+  "spaceApi": {
+    "url": "<spaceapi url>",
+    "logo": "<set to use an alternative logo>",
+    "interval": "<update interval in seconds, default 60"
   }
 }
