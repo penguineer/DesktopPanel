@@ -247,7 +247,7 @@ async def main():
     ])
     Window.size = (800, 480)
 
-    with open("desktop-panel.cfg", "r") as f:
+    with open("desktop-panel-config.json", "r") as f:
         config = json.load(f)
 
     if 'mqtt' not in config:
