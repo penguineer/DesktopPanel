@@ -89,6 +89,8 @@ class TabbedPanelApp(App):
     def build(self):
         home_page = HomePage()
         system_page = SystemPage()
+        system_page.conf = self._config.get("system", None)
+        system_page.mqttc = self.mqttc
         gtd_page = GtdPage()
         gtd_page.mqttc = self.mqttc
         issuelist_cfg = self._config.get("issuelist", None)
@@ -113,7 +115,7 @@ class TabbedPanelApp(App):
         self.amqp_icon = TrayIcon(label='AMQP', icon="assets/rabbitmq_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.amqp_icon)
 
-        Clock.schedule_once(lambda dt: ca.set_page(2))
+        Clock.schedule_once(lambda dt: ca.set_page(1))
 
         self.ca = ca
         return ca
