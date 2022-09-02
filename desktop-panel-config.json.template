@@ -29,5 +29,16 @@
     "url": "<spaceapi url>",
     "logo": "<set to use an alternative logo>",
     "interval": "<update interval in seconds, default 60"
+  },
+  "system": {
+    "temperatures": [
+      {
+        "label": "<label>",
+        "topic": "<MQTT Topic>",
+        "min": 30,
+        "warn": 70,
+        "alarm": 95
+      }
+    ]
   }
 }
