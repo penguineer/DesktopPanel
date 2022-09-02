@@ -1,8 +1,11 @@
 """ Module for temperature display """
 
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import StringProperty, NumericProperty, ColorProperty, ObjectProperty, ListProperty, DictProperty
 from kivy.uix.relativelayout import RelativeLayout
+
+import time
 
 import mqtt
 
@@ -134,6 +137,8 @@ class TemperatureView(RelativeLayout):
     COLOR_YELLOW = [249 / 256, 176 / 256, 0 / 256, 1]
     COLOR_RED = [228 / 256, 5 / 256, 41 / 256, 1]
 
+    MEASUREMENT_TIMEOUT = 60  # [s]
+
     temp = StringProperty("--°")
     level = NumericProperty(0)
     label_color = ColorProperty(COLOR_GREY)
@@ -144,6 +149,12 @@ class TemperatureView(RelativeLayout):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        # The time of last measurement
+        self.measure_instant = None
+        # Schedule the check
+        # (Scheduling does not have to be super precise, so we chose a rather long interval.)
+        Clock.schedule_interval(lambda dt: self._check_measurement_age(), 10)
 
         self.bind(conf=self._on_conf)
         self.bind(mqttc=self._on_mqttc)
@@ -162,6 +173,9 @@ class TemperatureView(RelativeLayout):
         mqtt.add_topic_callback(self.mqttc, topic, self._mqtt_callback)
 
     def _mqtt_callback(self, _client, _userdata, message):
+        # We received a measurement
+        self.measure_instant = time.time()
+
         payload = message.payload.decode("utf-8")
         try:
             temp_f = float(payload)
@@ -171,7 +185,6 @@ class TemperatureView(RelativeLayout):
             self.temp = f"%d°" % round(temp_f)
 
             self._calculate_level(temp_f)
-
         except ValueError as e:
             print(e)
             self.temp = "EE"
@@ -214,3 +227,14 @@ class TemperatureView(RelativeLayout):
             # Note that there is int-like cut-off instead of rounding!
             self.level = (temp_f - t_min) / (t_max - t_min) * 4
             self.temp_color = TemperatureView.COLOR_GREEN
+
+    def _check_measurement_age(self):
+        age = time.time() - self.measure_instant \
+            if self.measure_instant is not None \
+            else TemperatureView.MEASUREMENT_TIMEOUT + 1
+
+        if age > TemperatureView.MEASUREMENT_TIMEOUT:
+            self.temp = "--"
+            self.temp_color = TemperatureView.COLOR_GREY
+            self.label_color = TemperatureView.COLOR_GREY
+            self.level = 0
