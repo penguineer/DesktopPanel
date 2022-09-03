@@ -222,10 +222,10 @@ class TemperatureView(RelativeLayout):
             t_min = float(min_s)
             t_max = float(warn_s)
 
-            temp_f = 42
             # Distribute the rest over the levels 0 to 3
             # Note that there is int-like cut-off instead of rounding!
-            self.level = (temp_f - t_min) / (t_max - t_min) * 4
+            level = (temp_f - t_min) / (t_max - t_min) * 4
+            self.level = level
             self.temp_color = TemperatureView.COLOR_GREEN
 
     def _check_measurement_age(self):
