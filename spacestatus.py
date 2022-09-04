@@ -6,7 +6,7 @@ from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.logger import Logger
 from kivy.network.urlrequest import UrlRequest
-from kivy.properties import StringProperty, ColorProperty
+from kivy.properties import StringProperty, ColorProperty, DictProperty
 from kivy.uix.relativelayout import RelativeLayout
 
 
@@ -20,14 +20,10 @@ class SpaceApiConfguration(object):
         if config is None:
             return None
 
-        cfg_spaceapi = config.get("spaceApi", None)
-        if cfg_spaceapi is None:
-            return None
-
         return SpaceApiConfguration(
-            url=cfg_spaceapi.get("url", None),
-            logo=cfg_spaceapi.get("logo", None),
-            interval=int(cfg_spaceapi.get("interval", SpaceApiConfguration.INTERVAL_DEFAULT))
+            url=config.get("url", None),
+            logo=config.get("logo", None),
+            interval=int(config.get("interval", SpaceApiConfguration.INTERVAL_DEFAULT))
         )
 
     def __init__(self,
@@ -67,6 +63,8 @@ Builder.load_string("""
 
 
 class SpaceStatusWidget(RelativeLayout):
+    conf = DictProperty(None)
+
     icon = StringProperty(None)
 
     COLOR_NEUTRAL = [77 / 256, 77 / 256, 76 / 256, 0.1]
@@ -76,29 +74,33 @@ class SpaceStatusWidget(RelativeLayout):
 
     def __init__(self, **kwargs):
         super(SpaceStatusWidget, self).__init__(**kwargs)
-        self._config = None
+        self._api_config = None
         self._api = None
         self._clock = None
 
-    def load_config(self, config):
+        self._api_config = None
+
+        self.bind(conf=self._on_conf)
+
+    def _on_conf(self, _instance, conf: dict) -> None:
         if self._clock is not None:
             self._clock.cancel()
             self._clock = None
 
-        self._config = SpaceApiConfguration.from_json_cfg(config)
+        self._api_config = SpaceApiConfguration.from_json_cfg(conf)
 
-        if self._config:
+        if self._api_config:
             Clock.schedule_once(self._load_api)
 
-            if self._config.interval() > 0:
-                self._clock = Clock.schedule_interval(self._load_api, self._config.interval())
+            if self._api_config.interval() > 0:
+                self._clock = Clock.schedule_interval(self._load_api, self._api_config.interval())
 
     def _update(self):
         if self._api is None:
             return
 
         logo_url = self._api.get("logo", None)
-        self.icon = self._config.logo(logo_url)
+        self.icon = self._api_config.logo(logo_url)
 
         state = self._api.get("state", dict()).get("open", None)
         if state is None:
@@ -109,12 +111,12 @@ class SpaceStatusWidget(RelativeLayout):
             self.icon_color = SpaceStatusWidget.COLOR_CLOSED
 
     def _load_api(self, _dt):
-        if self._config is None:
+        if self._api_config is None:
             return
-        if self._config.url() is None:
+        if self._api_config.url() is None:
             return
 
-        UrlRequest(url=self._config.url(),
+        UrlRequest(url=self._api_config.url(),
                    on_success=self._on_api,
                    on_failure=self._on_failure,
                    on_error=self._on_error,
@@ -126,9 +128,9 @@ class SpaceStatusWidget(RelativeLayout):
         self._update()
 
     def _on_failure(self, _request, _result):
-        Logger.error("Failed to load Space API from %s", self._config.url())
+        Logger.error("Failed to load Space API from %s", self._api_config.url())
         self.icon_color = SpaceStatusWidget.COLOR_NEUTRAL
 
     def _on_error(self, _request, error):
-        Logger.error("Failed to load Space API from %s with error: %s", self._config.url(), error)
+        Logger.error("Failed to load Space API from %s with error: %s", self._api_config.url(), error)
         self.icon_color = SpaceStatusWidget.COLOR_NEUTRAL
