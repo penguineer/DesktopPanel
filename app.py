@@ -17,6 +17,7 @@ import globalcontent
 from page_gtd import GtdPage
 from page_home import HomePage
 from page_system import SystemPage
+from reloadable_json import JsonObserver
 from statusbar import TrayIcon
 
 from kivy import Logger
@@ -26,7 +27,7 @@ from kivy.core.window import Window
 
 from kivy.clock import Clock
 
-from kivy.properties import ObjectProperty
+from kivy.properties import ObjectProperty, StringProperty
 
 running = True
 
@@ -46,6 +47,7 @@ class TabbedPanelApp(App):
     mqtt_icon = ObjectProperty(None)
     amqp_icon = ObjectProperty(None)
 
+    conf_path = StringProperty()
     conf = ObjectProperty(None)
     mqttc = ObjectProperty(None)
 
@@ -53,9 +55,24 @@ class TabbedPanelApp(App):
         super().__init__(**kwargs)
 
         self.ca = None
+        self.config_obs = None
 
+        self.bind(conf_path=self._on_conf_path)
         self.bind(conf=self._on_conf)
         self.bind(mqttc=self._on_mqttc)
+
+    def _on_conf_path(self, _instance, path: str) -> None:
+        if self.config_obs:
+            self.config_obs.teardown()
+            self.config_obs = None
+
+        if not path:
+            return
+
+        self.config_obs = JsonObserver("desktop-panel-config.json",
+                                       update_callback=self.schedule_update_configuration,
+                                       failed_callback=None)
+        self.config_obs.setup()
 
     def _on_conf(self, _instance, conf: dict) -> None:
         if self.ca:
@@ -90,12 +107,19 @@ class TabbedPanelApp(App):
         self.ca = ca
         return ca
 
+    def on_stop(self):
+        if self.config_obs is not None:
+            self.config_obs.teardown()
+
     def select(self, index):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
 
     def popup_presence_dlg(self, _cmd, _args):
         if self.ca:
             self.ca.status_bar.ids.presence.popup_handler()
+
+    def schedule_update_configuration(self, conf):
+        Clock.schedule_once(lambda dt: self.setter('conf')(self, conf))
 
 
 def command_log(cmd, args):
@@ -120,6 +144,7 @@ async def main():
     ])
     Window.size = (800, 480)
 
+    # TODO Move MQTT and AMQP into widgets so that they can reload the configuration
     with open("desktop-panel-config.json", "r") as f:
         config = json.load(f)
 
@@ -136,10 +161,13 @@ async def main():
                                    dispatch=cmd_dispatch)
     amqp_conn.setup()
 
-    # TODO build and run app
+    # build and run app
     app = TabbedPanelApp()
     app.mqttc = client
-    app.conf = config
+    app.schedule_update_configuration(config)
+    # Setup path for automatic reloading
+    # We still need to preload the configuration until MQTT and AMQP are moved into widgets
+    app.conf_path = "desktop-panel-config.json"
     app.bind(amqp_icon=lambda i, v: amqp_conn.update_tray_icon(v))
 
     # TODO bind command handlers

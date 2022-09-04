@@ -254,7 +254,7 @@ class GlobalContentArea(AnchorLayout):
         super(GlobalContentArea, self).__init__(**kwargs)
 
         self.bind(conf=self._on_conf)
-        self.bind(conf=self._on_mqttc)
+        self.bind(mqttc=self._on_mqttc)
 
     def _on_conf(self, _instance, _conf: dict) -> None:
         for page in self._pages:
