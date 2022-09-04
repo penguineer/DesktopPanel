@@ -8,7 +8,7 @@ from watchdog.observers import Observer
 from kivy import Logger
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ListProperty, ColorProperty
+from kivy.properties import StringProperty, ListProperty, ColorProperty, DictProperty
 from kivy.uix.boxlayout import BoxLayout
 
 
@@ -64,7 +64,7 @@ Builder.load_string("""
                 root.pos[1] + root.size[1] - 24 - 4 
 
     Label:
-        text: root.issue_list_label
+        text: root.conf.get('label', 'GTD') if root.conf else "GTD"
         size_hint: 1, None
         size: 0, 24
         color: root.header_color
@@ -94,7 +94,8 @@ class IssueEntry(BoxLayout):
 
 
 class IssueList(BoxLayout):
-    issue_list_label = StringProperty("GTD")
+    conf = DictProperty(None)
+
     entries = ListProperty()
 
     border_color = ColorProperty([249 / 256, 176 / 256, 0 / 256, 1])
@@ -108,17 +109,34 @@ class IssueList(BoxLayout):
         self.issue_list = None
 
         self._observer = None
-        self.bind(issue_list_path=self._update_issue_list_path)
-        self._update_issue_list_path(None, self.issue_list_path)
+
+        self.bind(conf=self._on_conf)
+        self.property('conf').dispatch(self)
 
     def __del__(self):
         if self._observer is not None:
             self._observer.teardown()
 
+    def _on_conf(self, _instance, conf: dict) -> None:
+        if self._observer:
+            self._observer.teardown()
+
+        path = conf.get("path", None) if conf else None
+
+        if path is not None:
+            self._observer = IssueListObserver(path,
+                                               self.update_issue_list,
+                                               self._border_mark)
+            try:
+                self._observer.setup()
+                self._observer.on_modified(None)
+            except FileNotFoundError as e:
+                Logger.warning("Issues: %s", e)
+                self._border_mark(failed=True)
+
     def update_issue_list(self, issue_list):
         self.issue_list = issue_list
 
-        self.issue_list_label = issue_list['label']
         self.entries.clear()
 
         for issue in issue_list['issues']:
@@ -137,21 +155,6 @@ class IssueList(BoxLayout):
         })
 
         Clock.schedule_once(lambda dt: self.ids.rv.refresh_from_data())
-
-    def _update_issue_list_path(self, _instance, path: str) -> None:
-        if self._observer:
-            self._observer.teardown()
-
-        if path is not None:
-            self._observer = IssueListObserver(self.issue_list_path,
-                                               self.update_issue_list,
-                                               self._border_mark)
-            try:
-                self._observer.setup()
-                self._observer.on_modified(None)
-            except FileNotFoundError as e:
-                Logger.warning("Issues: %s", e)
-                self._border_mark(failed=True)
 
     def _border_mark(self, failed: bool) -> None:
         if failed:

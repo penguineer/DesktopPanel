@@ -65,6 +65,7 @@ class TabbedPanelApp(App):
         system_page.conf = self._config.get("system", None)
         system_page.mqttc = self.mqttc
         gtd_page = GtdPage()
+        gtd_page.conf = self._config.get("gtd", None)
         gtd_page.mqttc = self.mqttc
         issuelist_cfg = self._config.get("issuelist", None)
         if issuelist_cfg:

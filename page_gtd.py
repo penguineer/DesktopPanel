@@ -1,7 +1,7 @@
 """ Module for page GTD """
 
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ObjectProperty
+from kivy.properties import ObjectProperty, DictProperty
 
 import globalcontent
 
@@ -19,11 +19,12 @@ Builder.load_string("""
             text: ''
 
         IssueList:
-            issue_list_path: root.issue_list_path
+            id: issuelist
+            conf: root.conf.get("issuelist", None) if root.conf else None
             size_hint: None, 1           
 """)
 
 
 class GtdPage(globalcontent.ContentPage):
+    conf = DictProperty()
     mqttc = ObjectProperty(None)
-    issue_list_path = StringProperty(None)
