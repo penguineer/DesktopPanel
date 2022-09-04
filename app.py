@@ -46,16 +46,26 @@ class TabbedPanelApp(App):
     mqtt_icon = ObjectProperty(None)
     amqp_icon = ObjectProperty(None)
 
-    config = ObjectProperty(None)
+    conf = ObjectProperty(None)
     mqttc = ObjectProperty(None)
 
-    def __init__(self, config, mqttc, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self._config = config
-        self.mqttc = mqttc
-
         self.ca = None
+
+        self.bind(conf=self._on_conf)
+        self.bind(mqttc=self._on_mqttc)
+
+    def _on_conf(self, _instance, conf: dict) -> None:
+        if self.ca:
+            self.ca.conf = conf
+
+    def _on_mqttc(self, _instance, mqttc) -> None:
+        if self.ca:
+            self.ca.mqttc = mqttc
+
+        self.bind(mqtt_icon=lambda i, v: mqtt.update_tray_icon(self.mqttc, v))
 
     def build(self):
         home_page = HomePage()
@@ -66,7 +76,7 @@ class TabbedPanelApp(App):
 
         ca = globalcontent.GlobalContentArea()
         ca.mqttc = self.mqttc
-        ca.conf = self._config
+        ca.conf = self.conf
         Clock.schedule_once(lambda dt: ca.register_content(home_page))
         Clock.schedule_once(lambda dt: ca.register_content(system_page))
         Clock.schedule_once(lambda dt: ca.register_content(gtd_page))
@@ -129,8 +139,9 @@ async def main():
     amqp_conn.setup()
 
     # TODO build and run app
-    app = TabbedPanelApp(config, client)
-    app.bind(mqtt_icon=lambda i, v: mqtt.update_tray_icon(client, v))
+    app = TabbedPanelApp()
+    app.mqttc = client
+    app.conf = config
     app.bind(amqp_icon=lambda i, v: amqp_conn.update_tray_icon(v))
 
     # TODO bind command handlers
