@@ -75,10 +75,7 @@ class SpaceStatusWidget(RelativeLayout):
     def __init__(self, **kwargs):
         super(SpaceStatusWidget, self).__init__(**kwargs)
         self._api_config = None
-        self._api = None
         self._clock = None
-
-        self._api_config = None
 
         self.bind(conf=self._on_conf)
 
@@ -95,14 +92,14 @@ class SpaceStatusWidget(RelativeLayout):
             if self._api_config.interval() > 0:
                 self._clock = Clock.schedule_interval(self._load_api, self._api_config.interval())
 
-    def _update(self):
-        if self._api is None:
+    def _update(self, _request, api_result):
+        if api_result is None or self._api_config is None:
             return
 
-        logo_url = self._api.get("logo", None)
+        logo_url = api_result.get("logo", None)
         self.icon = self._api_config.logo(logo_url)
 
-        state = self._api.get("state", dict()).get("open", None)
+        state = api_result.get("state", dict()).get("open", None)
         if state is None:
             self.icon_color = SpaceStatusWidget.COLOR_NEUTRAL
         elif state:
@@ -117,15 +114,11 @@ class SpaceStatusWidget(RelativeLayout):
             return
 
         UrlRequest(url=self._api_config.url(),
-                   on_success=self._on_api,
+                   on_success=self._update,
                    on_failure=self._on_failure,
                    on_error=self._on_error,
                    timeout=10
                    )
-
-    def _on_api(self, _request, result):
-        self._api = result
-        self._update()
 
     def _on_failure(self, _request, _result):
         Logger.error("Failed to load Space API from %s", self._api_config.url())
