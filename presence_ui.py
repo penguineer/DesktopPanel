@@ -421,26 +421,16 @@ class PresenceSelector(RelativeLayout, PresenceColor):
         self.bind(active_presence=self._update_active_presence_color)
         self.bind(requested_presence=self._update_requested_presence_color)
 
-    def _update_active_presence_color(self, instance, value):
-        c = self.color_for(value)
+    def _update_active_presence_color(self, _instance, value):
+        c = PresenceColor.color_for(value)
         if c is None:
             c = self.background_color
-        instance._ind_circle_color = c
+        self._ind_circle_color = c
 
-    def _update_requested_presence_color(self, instance, value):
-        instance._btn_absent_color = [0, 0, 0, 1]
-        instance._btn_present_color = [0, 0, 0, 1]
-        instance._btn_occupied_color = [0, 0, 0, 1]
-        instance._btn_away_color = [0, 0, 0, 1]
-
-        if value == "present":
-            instance._btn_present_color = self.present_color_rgba
-        elif value == "occupied":
-            instance._btn_occupied_color = self.occupied_color_rgba
-        elif value == "away":
-            instance._btn_away_color = self.away_color_rgba
-        elif value == "absent":
-            instance._btn_absent_color = self.absent_color_rgba
+    def _update_requested_presence_color(self, _instance, value):
+        for state in ["absent", "present", "occupied", "away"]:
+            setattr(self, f"_btn_%s_color" % state,
+                    PresenceColor.color_for(value) if state == value else [0, 0, 0, 1])
 
 
 Builder.load_string("""
