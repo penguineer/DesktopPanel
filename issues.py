@@ -116,6 +116,7 @@ class IssueList(BoxLayout):
     def _on_conf(self, _instance, conf: dict) -> None:
         if self._observer:
             self._observer.teardown()
+            self._observer = None
 
         path = conf.get("path", None) if conf else None
 
