@@ -67,9 +67,6 @@ class TabbedPanelApp(App):
         gtd_page = GtdPage()
         gtd_page.conf = self._config.get("gtd", None)
         gtd_page.mqttc = self.mqttc
-        issuelist_cfg = self._config.get("issuelist", None)
-        if issuelist_cfg:
-            gtd_page.issue_list_path = issuelist_cfg.get("path", "issuelist.cfg")
 
         ca = globalcontent.GlobalContentArea()
         ca.mqttc = self.mqttc
