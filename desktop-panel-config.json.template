@@ -1,7 +1,6 @@
 {
   "mqtt": {
-    "host": "<MQTT Host>",
-    "presence-topic": "<MQTT presence topic>"
+    "host": "<MQTT Host>"
   },
   "amqp": {
     "host": "<AMQP Host>",
@@ -23,7 +22,8 @@
             "view_name": "<visible name>",
             "avatar": "<avatar url>"
         }
-    }
+    },
+    "mqtt-presence-topic": "<MQTT presence topic>"
   },
   "spaceApi": {
     "url": "<spaceapi url>",
