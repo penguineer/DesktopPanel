@@ -3,7 +3,7 @@ from datetime import datetime
 from kivy.lang import Builder
 
 from kivy.uix.relativelayout import RelativeLayout
-from kivy.properties import StringProperty, ColorProperty
+from kivy.properties import StringProperty, ColorProperty, ObjectProperty, DictProperty
 from kivy.clock import Clock
 
 Builder.load_string("""
@@ -138,6 +138,7 @@ class TrayIcon(RelativeLayout):
 
 Builder.load_string("""
 #:import SpaceStatusWidget spacestatus.SpaceStatusWidget
+#:import PresenceTrayWidget presence_ui.PresenceTrayWidget
 
 <StatusBar>:
     BoxLayout:
@@ -151,6 +152,7 @@ Builder.load_string("""
 
         PresenceTrayWidget:
             id: presence
+            mqttc: root.mqttc
             size_hint_x: None
             
         SpaceStatusWidget:
@@ -168,9 +170,17 @@ Builder.load_string("""
 
 
 class StatusBar(RelativeLayout):
+    conf = DictProperty(None)
+    mqttc = ObjectProperty(None)
+
     def __init__(self, **kwargs):
         super(RelativeLayout, self).__init__(**kwargs)
+
+        self.bind(conf=self._on_conf)
 
     @property
     def tray_bar(self):
         return self.ids.tray_bar
+
+    def _on_conf(self, _instance, conf: dict) -> None:
+        self.ids.presence.conf = conf.get("presence", None) if conf else None
