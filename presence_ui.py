@@ -5,11 +5,12 @@ from functools import partial
 from kivy import Logger
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty
+from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.widget import Widget
 
 from dlg import FullscreenTimedModal
+from presence_conn import PresenceSvcCfg, PingTechPresenceReceiver, PingTechPresenceUpdater, MqttPresenceUpdater
 
 
 class Presence:
@@ -517,12 +518,24 @@ Builder.load_string("""
 
 
 class PresenceTrayWidget(RelativeLayout):
+    conf = DictProperty(None)
+    mqttc = ObjectProperty(None)
+
     active_presence = StringProperty(None)
+    requested_presence = StringProperty(None)
+
+    presence_receiver = ObjectProperty(None)
+
+    presence_emitter = ObjectProperty(None)
+
+    mqtt_presence_updater = ObjectProperty(None)
+
+    handle_self = StringProperty()
+    handle_others = ListProperty()
+    presence_list = ListProperty()
 
     _presence_color = ColorProperty(PresenceColor.absent_color_rgba)
     _presence_text = StringProperty(None)
-
-    touch_cb = ObjectProperty(None)
 
     presence_texts = {
         "absent": "Absent",
@@ -533,18 +546,156 @@ class PresenceTrayWidget(RelativeLayout):
 
     def __init__(self, **kwargs):
         super(PresenceTrayWidget, self).__init__(**kwargs)
+
+        self.bind(conf=self._on_conf)
+        self.bind(mqttc=self._on_mqttc)
+
         self.bind(active_presence=self._on_active_presence)
 
-    def _on_active_presence(self, _, value):
-        self._presence_color = PresenceColor.color_for(value)
-        self._presence_text = self.presence_texts.get(value, PresenceColor.absent_color_rgba)
+        self.pr_sel = None
+
+        self.bind(active_presence=self._on_active_presence)
+        self.property('active_presence').dispatch(self)
+
+        self.bind(presence_list=self._on_presence_list)
+        self.property('presence_list').dispatch(self)
+
+        self.bind(requested_presence=self._on_presence_request)
+
+    def _on_conf(self, _instance, _conf: list) -> None:
+        self._update_configuration()
+
+    def _on_mqttc(self, _instance, _mqttc) -> None:
+        self._update_configuration()
+
+    def _update_configuration(self) -> None:
+        if self.conf and self.mqttc:
+            presence_topic = self.conf.get('mqtt-presence-topic', None)
+            if presence_topic:
+                self.mqtt_presence_updater = MqttPresenceUpdater(self.mqttc, presence_topic)
+        else:
+            self.mqtt_presence_updater = None
+
+        self._load_presence_config()
+
+    def popup_handler(self, _cmd=None, _args=None):
+        Clock.schedule_once(lambda dt: self._presence_load())
+
+        if self.pr_sel is not None and self.pr_sel.is_inactive():
+            self.pr_sel = None
+
+        if self.pr_sel is None:
+            self.pr_sel = PresenceDlg()
+
+            self.pr_sel.handle_self = self.handle_self
+            self.pr_sel.handle_others = self.handle_others
+            self.pr_sel.presence_list = self.presence_list
+
+            # Don't do this bind:
+            #   self.bind(active_presence=self.pr_sel.setter('active_presence'))
+            # This results in dangling property binds and repeated calls of inactive widgets.
+
+            self.pr_sel.active_presence = self.active_presence
+            self.pr_sel.requested_presence = self.requested_presence
+            self.pr_sel.bind(requested_presence=self.setter('requested_presence'))
+
+            self.pr_sel.open()
+        else:
+            self.pr_sel.dismiss()
+            self.pr_sel = None
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
-            if self.touch_cb is not None:
-                self.touch_cb()
+            self.popup_handler()
             return True
         return super(PresenceTrayWidget, self).on_touch_down(touch)
+
+    def _on_presence_request(self, _instance, value):
+        Clock.schedule_once(lambda dt: self.pr_sel is None or self.pr_sel.dismiss(), timeout=0.25)
+        Clock.schedule_once(lambda dt: setattr(self, 'active_presence', value))
+        Clock.schedule_once(lambda dt: setattr(self.presence_emitter, 'requested_presence', value))
+
+    def _on_active_presence(self, _instance, value):
+        if self.presence_list is not None and len(self.presence_list):
+            p = self.presence_list[0]
+            p.presence = value
+
+        if self.pr_sel is not None:
+            self.pr_sel.active_presence = value
+
+        if self.mqtt_presence_updater is not None and value:
+            self.mqtt_presence_updater.update_status(value)
+
+        if value in self.presence_texts:
+            self._presence_color = PresenceColor.color_for(value)
+            self._presence_text = self.presence_texts.get(value, PresenceColor.absent_color_rgba)
+        else:
+            self._presence_color = PresenceColor.color_for("absent")
+            self._presence_text = None
+
+    def _on_presence_list(self, _instance, _value):
+        if self.pr_sel is not None:
+            self.pr_sel.presence_list = []
+            self.pr_sel.presence_list = self.presence_list
+
+    def _load_presence_config(self):
+        if self.conf is None:
+            self.handle_self = ""
+            self.handle_others = []
+            self.presence_list = []
+            self.presence_receiver = None
+            self.presence_updater = None
+            self.presence_emitter = None
+            return
+
+        self.handle_self = self.conf.get('self', None)
+        self.handle_others = self.conf.get('others', [])
+
+        pl = []
+
+        people = self.conf.get('people', {})
+        if people is not None:
+            for p in [self.handle_self] + self.handle_others:
+                person = people.get(p, None)
+                if person is not None:
+                    presence = Presence(handle=p,
+                                        view_name=person.get('view_name', None),
+                                        avatar=person.get('avatar', None))
+                    pl.append(presence)
+
+        self.presence_list = pl
+
+        presence_svc_cfg = PresenceSvcCfg(
+            svc=self.conf['svc'],
+            handle=self.conf['self'],
+            token=self.conf['token']
+        )
+        self.presence_receiver = PingTechPresenceReceiver(presence_svc_cfg)
+        self.presence_updater = PingTechPresenceUpdater(presence_svc_cfg)
+        self.presence_emitter = PresencePingTechEmitter(presence_updater=self.presence_updater)
+
+        self._presence_load()
+
+    def _presence_load(self):
+        if self.presence_receiver:
+            self.presence_receiver.receive_status(self._on_presence_loaded,
+                                                  self._on_presence_load_failed)
+
+    def _on_presence_loaded(self, remote_presence):
+        for e in self.presence_list:
+            presence = remote_presence.get(e.handle)
+            if presence is not None:
+                e.presence = presence.get('status', "unknown")
+
+            if e.handle == self.handle_self:
+                self.active_presence = e.presence
+
+        self.property('presence_list').dispatch(self)
+
+    def _on_presence_load_failed(self, error):
+        Logger.error("Presence: Error while fetching presence: " + str(error))
+        for e in self.presence_list:
+            e.presence = "unknown"
 
 
 class PresencePingTechEmitter(Widget):
