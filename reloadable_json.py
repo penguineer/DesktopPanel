@@ -40,6 +40,7 @@ class JsonObserver(FileSystemEventHandler):
 
     def teardown(self):
         if self._observer is not None and self._observer.is_alive():
+            self._observer.stop()
             self._observer.join()
 
     def on_modified(self, _event):
