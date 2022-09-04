@@ -3,7 +3,7 @@ from kivy.lang import Builder
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.properties import ObjectProperty, StringProperty, OptionProperty, NumericProperty, AliasProperty, \
-    BooleanProperty, ColorProperty
+    BooleanProperty, ColorProperty, DictProperty
 
 from kivy.uix.button import Button
 
@@ -125,6 +125,7 @@ class ContextButton(Button):
 
 
 Builder.load_string("""
+#:import StatusBar statusbar.StatusBar
 
 <GlobalContentArea>:
     anchor_y: 'top'
@@ -163,13 +164,15 @@ Builder.load_string("""
             orientation: 'vertical'
             spacing: 5
 
-            AnchorLayout:
+            StatusBar:
                 size: [root.width - root.tab_width-4, root.status_height]
                 size_hint_x: None
                 size_hint_y: None
                 anchor_y: 'top'   
                 anchor_x: 'left'         
                 id: StatusBar
+                conf: root.conf
+                mqttc: root.mqttc
     
             AnchorLayout:          
                 size: [root.width - root.tab_width-4, root.height - root.status_height - 4]
@@ -184,6 +187,12 @@ class GlobalContentArea(AnchorLayout):
 
     Some properties copied from Kivy's TabbedPanel
     """
+
+    conf = DictProperty(None)
+    """Application configuration"""
+
+    mqttc = ObjectProperty(None)
+    """MQTT client for the application"""
 
     background_color = ColorProperty([0, 0, 0, 1])
     """Background color, in the format (r, g, b, a).
@@ -257,17 +266,6 @@ class GlobalContentArea(AnchorLayout):
         if self._current_page is None:
             self.set_page(index)
 
-    def register_status_bar(self, statusbar):
-        # Remove a status bar if it already exists
-        if self._statusbar is not None:
-            self.ids.StatusBar.remove_widget(self._statusbar)
-
-        self._statusbar = statusbar
-
-        # Register status bar if one was given
-        if self._statusbar is not None:
-            self.ids.StatusBar.add_widget(self._statusbar)
-
     @property
     def status_bar(self):
-        return self._statusbar
+        return self.ids.StatusBar

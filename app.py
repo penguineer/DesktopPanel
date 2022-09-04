@@ -17,7 +17,7 @@ import globalcontent
 from page_gtd import GtdPage
 from page_home import HomePage
 from page_system import SystemPage
-from statusbar import StatusBar, TrayIcon
+from statusbar import TrayIcon
 
 from kivy import Logger
 from kivy.config import Config
@@ -72,15 +72,13 @@ class TabbedPanelApp(App):
             gtd_page.issue_list_path = issuelist_cfg.get("path", "issuelist.cfg")
 
         ca = globalcontent.GlobalContentArea()
+        ca.mqttc = self.mqttc
+        ca.conf = self._config
         Clock.schedule_once(lambda dt: ca.register_content(home_page))
         Clock.schedule_once(lambda dt: ca.register_content(system_page))
         Clock.schedule_once(lambda dt: ca.register_content(gtd_page))
 
-        sb = StatusBar()
-        sb.mqttc = self.mqttc
-        sb.conf = self._config
-        ca.register_status_bar(sb)
-        self.presence_tray = sb.ids.presence
+        self.presence_tray = ca.status_bar.ids.presence
 
         self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.mqtt_icon)
