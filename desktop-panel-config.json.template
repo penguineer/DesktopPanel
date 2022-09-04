@@ -9,9 +9,6 @@
     "declare": "true | false",
     "command_channel": "<AMQP command channel>"
   },
-  "issuelist": {
-    "path": "<issue list path>"
-  },
   "presence": {
     "svc": "<service url>",
     "self": "<your own handle>",
@@ -29,6 +26,12 @@
     "url": "<spaceapi url>",
     "logo": "<set to use an alternative logo>",
     "interval": "<update interval in seconds, default 60"
+  },
+  "gtd": {
+      "issuelist": {
+        "label": "<optional label for the issue list">
+        "path": "<issue list path>"
+      }
   },
   "system": {
     "temperatures": [
