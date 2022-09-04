@@ -184,3 +184,4 @@ class StatusBar(RelativeLayout):
 
     def _on_conf(self, _instance, conf: dict) -> None:
         self.ids.presence.conf = conf.get("presence", None) if conf else None
+        self.ids.spacestatus.conf = conf.get("spaceApi", None) if conf else None

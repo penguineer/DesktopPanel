@@ -79,7 +79,6 @@ class TabbedPanelApp(App):
         sb.mqttc = self.mqttc
         sb.conf = self._config
         ca.register_status_bar(sb)
-        sb.ids.spacestatus.load_config(self._config)
         self.presence_tray = sb.ids.presence
 
         self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
