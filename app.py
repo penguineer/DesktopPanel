@@ -87,8 +87,6 @@ class TabbedPanelApp(App):
         self.amqp_icon = TrayIcon(label='AMQP', icon="assets/rabbitmq_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.amqp_icon)
 
-        Clock.schedule_once(lambda dt: ca.set_page(1))
-
         self.ca = ca
         return ca
 
