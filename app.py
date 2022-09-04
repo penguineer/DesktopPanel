@@ -57,8 +57,6 @@ class TabbedPanelApp(App):
 
         self.ca = None
 
-        self.presence_tray = None
-
     def build(self):
         home_page = HomePage()
         system_page = SystemPage()
@@ -75,8 +73,6 @@ class TabbedPanelApp(App):
         Clock.schedule_once(lambda dt: ca.register_content(system_page))
         Clock.schedule_once(lambda dt: ca.register_content(gtd_page))
 
-        self.presence_tray = ca.status_bar.ids.presence
-
         self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.mqtt_icon)
 
@@ -92,8 +88,8 @@ class TabbedPanelApp(App):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
 
     def popup_presence_dlg(self, _cmd, _args):
-        if self.presence_tray:
-            self.presence_tray.popup_handler()
+        if self.ca:
+            self.ca.status_bar.ids.presence.popup_handler()
 
 
 def command_log(cmd, args):
