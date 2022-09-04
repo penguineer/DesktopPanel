@@ -3,7 +3,7 @@ from kivy.lang import Builder
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.properties import ObjectProperty, StringProperty, OptionProperty, NumericProperty, AliasProperty, \
-    BooleanProperty, ColorProperty
+    BooleanProperty, ColorProperty, DictProperty
 
 from kivy.uix.button import Button
 
@@ -11,6 +11,14 @@ from kivy.animation import Animation
 
 
 class ContentPage(RelativeLayout):
+    conf_lambda = ObjectProperty(None)
+    """ If this lambda is set, the conf property is determined (by a calling party, i.e. the
+        GlobalContentArea) to determine the configuration from a global configuration. 
+    """
+
+    conf = DictProperty(None)
+    mqttc = ObjectProperty(None)
+
     label = StringProperty(None)
     icon = StringProperty(None)
 
@@ -125,6 +133,7 @@ class ContextButton(Button):
 
 
 Builder.load_string("""
+#:import StatusBar statusbar.StatusBar
 
 <GlobalContentArea>:
     anchor_y: 'top'
@@ -163,13 +172,15 @@ Builder.load_string("""
             orientation: 'vertical'
             spacing: 5
 
-            AnchorLayout:
+            StatusBar:
                 size: [root.width - root.tab_width-4, root.status_height]
                 size_hint_x: None
                 size_hint_y: None
                 anchor_y: 'top'   
                 anchor_x: 'left'         
                 id: StatusBar
+                conf: root.conf
+                mqttc: root.mqttc
     
             AnchorLayout:          
                 size: [root.width - root.tab_width-4, root.height - root.status_height - 4]
@@ -184,6 +195,12 @@ class GlobalContentArea(AnchorLayout):
 
     Some properties copied from Kivy's TabbedPanel
     """
+
+    conf = DictProperty(None)
+    """Application configuration"""
+
+    mqttc = ObjectProperty(None)
+    """MQTT client for the application"""
 
     background_color = ColorProperty([0, 0, 0, 1])
     """Background color, in the format (r, g, b, a).
@@ -236,6 +253,21 @@ class GlobalContentArea(AnchorLayout):
 
         super(GlobalContentArea, self).__init__(**kwargs)
 
+        self.bind(conf=self._on_conf)
+        self.bind(conf=self._on_mqttc)
+
+    def _on_conf(self, _instance, _conf: dict) -> None:
+        for page in self._pages:
+            self._page_conf(page)
+
+    def _page_conf(self, page):
+        if page and page.conf_lambda:
+            page.conf = page.conf_lambda(self.conf) if self.conf else dict()
+
+    def _on_mqttc(self, _instance, mqttc) -> None:
+        for page in self._pages:
+            page.mqttc = mqttc
+
     def set_page(self, page):
         if self._current_page is not None:
             self.ids.ContentPanel.remove_widget(self._current_page)
@@ -250,6 +282,12 @@ class GlobalContentArea(AnchorLayout):
         index = len(self._pages)
         self._pages.append(page)
 
+        # set configuration
+        self._page_conf(page)
+
+        # set mqttc property
+        page.mqttc = self.mqttc
+
         cbtn = page.create_context_button(length=self.tab_height,
                                           cb=lambda inst: self.set_page(index))
         self.ids.ContextButtons.add_widget(cbtn)
@@ -257,17 +295,6 @@ class GlobalContentArea(AnchorLayout):
         if self._current_page is None:
             self.set_page(index)
 
-    def register_status_bar(self, statusbar):
-        # Remove a status bar if it already exists
-        if self._statusbar is not None:
-            self.ids.StatusBar.remove_widget(self._statusbar)
-
-        self._statusbar = statusbar
-
-        # Register status bar if one was given
-        if self._statusbar is not None:
-            self.ids.StatusBar.add_widget(self._statusbar)
-
     @property
     def status_bar(self):
-        return self._statusbar
+        return self.ids.StatusBar

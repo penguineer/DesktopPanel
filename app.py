@@ -17,7 +17,7 @@ import globalcontent
 from page_gtd import GtdPage
 from page_home import HomePage
 from page_system import SystemPage
-from statusbar import StatusBar, TrayIcon
+from statusbar import TrayIcon
 
 from kivy import Logger
 from kivy.config import Config
@@ -46,49 +46,46 @@ class TabbedPanelApp(App):
     mqtt_icon = ObjectProperty(None)
     amqp_icon = ObjectProperty(None)
 
-    config = ObjectProperty(None)
+    conf = ObjectProperty(None)
     mqttc = ObjectProperty(None)
 
-    def __init__(self, config, mqttc, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
-        self._config = config
-        self.mqttc = mqttc
 
         self.ca = None
 
-        self.presence_tray = None
+        self.bind(conf=self._on_conf)
+        self.bind(mqttc=self._on_mqttc)
+
+    def _on_conf(self, _instance, conf: dict) -> None:
+        if self.ca:
+            self.ca.conf = conf
+
+    def _on_mqttc(self, _instance, mqttc) -> None:
+        if self.ca:
+            self.ca.mqttc = mqttc
+
+        self.bind(mqtt_icon=lambda i, v: mqtt.update_tray_icon(self.mqttc, v))
 
     def build(self):
         home_page = HomePage()
         system_page = SystemPage()
-        system_page.conf = self._config.get("system", None)
-        system_page.mqttc = self.mqttc
+        system_page.conf_lambda = lambda conf: conf.get("system", dict())
         gtd_page = GtdPage()
-        gtd_page.conf = self._config.get("gtd", None)
-        gtd_page.mqttc = self.mqttc
-        issuelist_cfg = self._config.get("issuelist", None)
-        if issuelist_cfg:
-            gtd_page.issue_list_path = issuelist_cfg.get("path", "issuelist.cfg")
+        gtd_page.conf_lambda = lambda conf: conf.get("gtd", dict())
 
         ca = globalcontent.GlobalContentArea()
+        ca.mqttc = self.mqttc
+        ca.conf = self.conf
         Clock.schedule_once(lambda dt: ca.register_content(home_page))
         Clock.schedule_once(lambda dt: ca.register_content(system_page))
         Clock.schedule_once(lambda dt: ca.register_content(gtd_page))
-
-        sb = StatusBar()
-        sb.mqttc = self.mqttc
-        sb.conf = self._config
-        ca.register_status_bar(sb)
-        self.presence_tray = sb.ids.presence
 
         self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.mqtt_icon)
 
         self.amqp_icon = TrayIcon(label='AMQP', icon="assets/rabbitmq_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.amqp_icon)
-
-        Clock.schedule_once(lambda dt: ca.set_page(1))
 
         self.ca = ca
         return ca
@@ -97,8 +94,8 @@ class TabbedPanelApp(App):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
 
     def popup_presence_dlg(self, _cmd, _args):
-        if self.presence_tray:
-            self.presence_tray.popup_handler()
+        if self.ca:
+            self.ca.status_bar.ids.presence.popup_handler()
 
 
 def command_log(cmd, args):
@@ -140,8 +137,9 @@ async def main():
     amqp_conn.setup()
 
     # TODO build and run app
-    app = TabbedPanelApp(config, client)
-    app.bind(mqtt_icon=lambda i, v: mqtt.update_tray_icon(client, v))
+    app = TabbedPanelApp()
+    app.mqttc = client
+    app.conf = config
     app.bind(amqp_icon=lambda i, v: amqp_conn.update_tray_icon(v))
 
     # TODO bind command handlers
