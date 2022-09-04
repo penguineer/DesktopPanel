@@ -1,9 +1,4 @@
 """Issue handling"""
-import json
-from typing import Callable, Optional
-
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
 
 from kivy import Logger
 from kivy.clock import Clock
@@ -11,6 +6,7 @@ from kivy.lang import Builder
 from kivy.properties import StringProperty, ListProperty, ColorProperty, DictProperty
 from kivy.uix.boxlayout import BoxLayout
 
+from reloadable_json import JsonObserver
 
 Builder.load_string("""
 <IssueEntry>
@@ -124,9 +120,9 @@ class IssueList(BoxLayout):
         path = conf.get("path", None) if conf else None
 
         if path is not None:
-            self._observer = IssueListObserver(path,
-                                               self.update_issue_list,
-                                               self._border_mark)
+            self._observer = JsonObserver(path,
+                                          self.update_issue_list,
+                                          self._border_mark)
             try:
                 self._observer.setup()
                 self._observer.on_modified(None)
@@ -163,50 +159,3 @@ class IssueList(BoxLayout):
         else:
             self.border_color = [249 / 256, 176 / 256, 0 / 256, 1]
             self.header_color = [249 / 256, 176 / 256, 0 / 256, 1]
-
-
-class IssueListObserver(FileSystemEventHandler):
-    def __init__(self,
-                 issuelist_path: str,
-                 update_callback: Callable[[json], None],
-                 failed_callback: Optional[Callable[[bool], None]] = None):
-        if not issuelist_path:
-            raise ValueError("Issue list path must be provided!")
-
-        self._issuelist_path = issuelist_path
-
-        if not update_callback:
-            raise ValueError("Update callback must be provided!")
-        self._update_callback = update_callback
-
-        self._failed_callback = failed_callback
-
-        self._observer = None
-
-    def setup(self):
-        self._observer = Observer()
-        self._observer.schedule(self,
-                                self._issuelist_path,
-                                recursive=False)
-        try:
-            self._observer.start()
-        except FileNotFoundError as e:
-            self._observer = None
-            raise e
-
-    def teardown(self):
-        if self._observer is not None and self._observer.is_alive():
-            self._observer.join()
-
-    def on_modified(self, _event):
-        try:
-            with open(self._issuelist_path, "r") as f:
-                self._update_callback(json.load(f))
-                if self._failed_callback is not None:
-                    self._failed_callback(False)
-        except FileNotFoundError as e:
-            Logger.warning("Issues: %s", e)
-        except json.decoder.JSONDecodeError as e:
-            if self._failed_callback is not None:
-                self._failed_callback(True)
-            Logger.warning("Issues: %s", e)
