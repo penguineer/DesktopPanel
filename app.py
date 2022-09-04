@@ -60,11 +60,9 @@ class TabbedPanelApp(App):
     def build(self):
         home_page = HomePage()
         system_page = SystemPage()
-        system_page.conf = self._config.get("system", None)
-        system_page.mqttc = self.mqttc
+        system_page.conf_lambda = lambda conf: conf.get("system", dict())
         gtd_page = GtdPage()
-        gtd_page.conf = self._config.get("gtd", None)
-        gtd_page.mqttc = self.mqttc
+        gtd_page.conf_lambda = lambda conf: conf.get("gtd", dict())
 
         ca = globalcontent.GlobalContentArea()
         ca.mqttc = self.mqttc

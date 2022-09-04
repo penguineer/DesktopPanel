@@ -11,6 +11,14 @@ from kivy.animation import Animation
 
 
 class ContentPage(RelativeLayout):
+    conf_lambda = ObjectProperty(None)
+    """ If this lambda is set, the conf property is determined (by a calling party, i.e. the
+        GlobalContentArea) to determine the configuration from a global configuration. 
+    """
+
+    conf = DictProperty(None)
+    mqttc = ObjectProperty(None)
+
     label = StringProperty(None)
     icon = StringProperty(None)
 
@@ -245,6 +253,21 @@ class GlobalContentArea(AnchorLayout):
 
         super(GlobalContentArea, self).__init__(**kwargs)
 
+        self.bind(conf=self._on_conf)
+        self.bind(conf=self._on_mqttc)
+
+    def _on_conf(self, _instance, _conf: dict) -> None:
+        for page in self._pages:
+            self._page_conf(page)
+
+    def _page_conf(self, page):
+        if page and page.conf_lambda:
+            page.conf = page.conf_lambda(self.conf) if self.conf else dict()
+
+    def _on_mqttc(self, _instance, mqttc) -> None:
+        for page in self._pages:
+            page.mqttc = mqttc
+
     def set_page(self, page):
         if self._current_page is not None:
             self.ids.ContentPanel.remove_widget(self._current_page)
@@ -258,6 +281,12 @@ class GlobalContentArea(AnchorLayout):
     def register_content(self, page):
         index = len(self._pages)
         self._pages.append(page)
+
+        # set configuration
+        self._page_conf(page)
+
+        # set mqttc property
+        page.mqttc = self.mqttc
 
         cbtn = page.create_context_button(length=self.tab_height,
                                           cb=lambda inst: self.set_page(index))

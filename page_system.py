@@ -1,7 +1,6 @@
 """ Module for page System """
 
 from kivy.lang import Builder
-from kivy.properties import ObjectProperty, DictProperty
 
 import globalcontent
 
@@ -23,22 +22,10 @@ Builder.load_string("""
     
         TemperaturePanel:
             id: temperatures
+            conf: root.conf.get("temperatures", {}) if root.conf else {}
             mqttc: root.mqttc
 """)
 
 
 class SystemPage(globalcontent.ContentPage):
-    mqttc = ObjectProperty(None)
-    conf = DictProperty(None)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-        self.bind(conf=self._on_conf)
-
-    def _on_conf(self, _instance, conf: dict) -> None:
-        if conf:
-            self.ids.temperatures.conf = conf.get("temperatures", None)
-        else:
-            self.ids.temperatures.conf = None
-
+    pass
