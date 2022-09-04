@@ -621,7 +621,7 @@ class PresenceTrayWidget(RelativeLayout):
             self._presence_text = self.presence_texts.get(value, PresenceColor.absent_color_rgba)
         else:
             self._presence_color = PresenceColor.color_for("absent")
-            self._presence_text = None
+            self._presence_text = ""
 
     def _on_presence_list(self, _instance, _value):
         if self.pr_sel is not None:
