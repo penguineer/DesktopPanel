@@ -92,7 +92,7 @@ class PresenceListItem(RelativeLayout):
 
     presence_color = ColorProperty([177 / 256, 77 / 256, 76 / 256, 1])
 
-    contact = ObjectProperty()
+    contact = ObjectProperty(None, allownone=True)
     presence_list = ListProperty()
 
     def __init__(self, **kwargs):
@@ -139,7 +139,7 @@ Builder.load_string("""
 
 
 class PresenceList(RelativeLayout):
-    handle_self = StringProperty(None)
+    handle_self = StringProperty(None, allownone=True)
     contacts = DictProperty(None)
 
     presence_list = ListProperty([])
@@ -396,8 +396,8 @@ class PresenceSelector(RelativeLayout, PresenceColor):
     defaults to [249 / 256, 176 / 256, 0 / 256, 1].
     """
 
-    active_status = StringProperty(None)
-    requested_status = StringProperty(None)
+    active_status = StringProperty(None, allownone=True)
+    requested_status = StringProperty(None, allownone=True)
 
     _ind_circle_color = ColorProperty([0, 0, 0, 1])
     _btn_absent_color = ColorProperty([0, 0, 0, 1])
@@ -455,10 +455,10 @@ Builder.load_string("""
 
 
 class PresenceDlg(FullscreenTimedModal):
-    active_presence = ObjectProperty(None)
-    requested_status = StringProperty(None)
+    active_presence = ObjectProperty(None, allownone=True)
+    requested_status = StringProperty(None, allownone=True)
 
-    handle_self = StringProperty()
+    handle_self = StringProperty(None, allownone=True)
     contacts = DictProperty()
     presence_list = ListProperty()
 
@@ -520,15 +520,15 @@ Builder.load_string("""
 
 
 class PresenceTrayWidget(RelativeLayout):
-    conf = DictProperty(None)
-    mqttc = ObjectProperty(None)
+    conf = DictProperty(None, allownone=True)
+    mqttc = ObjectProperty(None, allownone=True)
 
-    active_presence = ObjectProperty(None)
-    requested_status = StringProperty(None)
+    active_presence = ObjectProperty(None, allownone=True)
+    requested_status = StringProperty(None, allownone=True)
 
-    presence_svc_cfg = ObjectProperty(None)
+    presence_svc_cfg = ObjectProperty(None, allownone=True)
 
-    handle_self = StringProperty()
+    handle_self = StringProperty(None, allownone=True)
     handle_others = ListProperty()
     contacts = DictProperty()
     presence_list = ListProperty()
@@ -567,6 +567,8 @@ class PresenceTrayWidget(RelativeLayout):
             self.pr_sel.contacts = self.contacts
             self.pr_sel.presence_list = self.presence_list
             self.bind(presence_list=self.pr_sel.setter('presence_list'))
+            self.bind(handle_self=self.pr_sel.setter('handle_self'))
+            self.bind(contacts=self.pr_sel.setter('contacts'))
 
             # Don't do this bind:
             #   self.bind(active_presence=self.pr_sel.setter('active_presence'))
@@ -598,7 +600,7 @@ class PresenceTrayWidget(RelativeLayout):
         if self.pr_sel is not None:
             self.pr_sel.active_presence = value
 
-        if 'mqtt_presence' in self.ids:
+        if 'mqtt_presence' in self.ids and value:
             self.ids.mqtt_presence.post_status(value.status)
 
         if value and value.status in self.presence_texts:

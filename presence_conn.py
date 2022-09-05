@@ -59,8 +59,8 @@ class PresencePublisher(Widget):
 
 
 class MqttPresenceUpdater(PresencePublisher):
-    mqttc = ObjectProperty()
-    topic = StringProperty()
+    mqttc = ObjectProperty(None, allownone=True)
+    topic = StringProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -101,10 +101,10 @@ class PresenceSvcCfg(object):
 
 
 class PingTechPresenceUpdater(PresencePublisher):
-    svc_conf = ObjectProperty(None)
+    svc_conf = ObjectProperty(None, allownone=True)
 
-    emission_result = ObjectProperty(None)
-    emission_error = StringProperty(None)
+    emission_result = ObjectProperty(None, allownone=True)
+    emission_error = StringProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -147,15 +147,15 @@ class PingTechPresenceUpdater(PresencePublisher):
 
 
 class PingTechPresenceReceiver(Widget):
-    svc_conf = ObjectProperty(None)
+    svc_conf = ObjectProperty(None, allownone=True)
 
-    handle_self = StringProperty()
+    handle_self = StringProperty(None, allownone=True)
     contacts = DictProperty()
 
-    active_presence = ObjectProperty()
+    active_presence = ObjectProperty(None, allownone=True)
     presence_list = ListProperty()
 
-    retrieval_error = ObjectProperty()
+    retrieval_error = ObjectProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
