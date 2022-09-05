@@ -546,32 +546,16 @@ class PresenceTrayWidget(RelativeLayout):
     def __init__(self, **kwargs):
         super(PresenceTrayWidget, self).__init__(**kwargs)
 
-        self.bind(conf=self._on_conf)
-        self.bind(mqttc=self._on_mqttc)
+        self.bind(conf=self._load_presence_config)
+        self.bind(mqttc=self._load_presence_config)
 
         self.bind(active_presence=self._on_active_presence)
+        self.bind(requested_status=self._on_presence_request)
 
         self.pr_sel = None
 
-        self.bind(active_presence=self._on_active_presence)
-        self.property('active_presence').dispatch(self)
-
-        self.bind(presence_list=self._on_presence_list)
-        self.property('presence_list').dispatch(self)
-
-        self.bind(requested_status=self._on_presence_request)
-
-    def _on_conf(self, _instance, _conf: list) -> None:
-        self._update_configuration()
-
-    def _on_mqttc(self, _instance, _mqttc) -> None:
-        self._update_configuration()
-
-    def _update_configuration(self) -> None:
-        self._load_presence_config()
-
     def popup_handler(self, _cmd=None, _args=None):
-        Clock.schedule_once(lambda dt: self._presence_load())
+        Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
 
         if self.pr_sel is not None and self.pr_sel.is_inactive():
             self.pr_sel = None
@@ -582,6 +566,7 @@ class PresenceTrayWidget(RelativeLayout):
             self.pr_sel.handle_self = self.handle_self
             self.pr_sel.contacts = self.contacts
             self.pr_sel.presence_list = self.presence_list
+            self.bind(presence_list=self.pr_sel.setter('presence_list'))
 
             # Don't do this bind:
             #   self.bind(active_presence=self.pr_sel.setter('active_presence'))
@@ -624,12 +609,7 @@ class PresenceTrayWidget(RelativeLayout):
             self._presence_color = PresenceColor.color_for("absent")
             self._presence_text = ""
 
-    def _on_presence_list(self, _instance, _value):
-        if self.pr_sel is not None:
-            self.pr_sel.presence_list = []
-            self.pr_sel.presence_list = self.presence_list
-
-    def _load_presence_config(self):
+    def _load_presence_config(self, _instance, _value):
         if self.conf is None:
             self.handle_self = ""
             self.handle_others = []
@@ -661,8 +641,4 @@ class PresenceTrayWidget(RelativeLayout):
             token=self.conf['token']
         )
 
-        self._presence_load()
-
-    def _presence_load(self):
-        if 'presence_receiver' in self.ids:
-            self.ids.presence_receiver.receive_status()
+        Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
