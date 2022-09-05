@@ -20,7 +20,8 @@
             "avatar": "<avatar url>"
         }
     },
-    "mqtt-presence-topic": "<MQTT presence topic>"
+    "mqtt-presence-topic": "<MQTT presence topic>",
+    "refresh-interval": <optional refresh interval in s>
   },
   "spaceApi": {
     "url": "<spaceapi url>",
