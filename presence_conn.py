@@ -2,12 +2,51 @@
 
 import json
 from abc import abstractmethod
-from functools import partial
 
 from kivy.logger import Logger
 from kivy.network.urlrequest import UrlRequest
-from kivy.properties import ObjectProperty, StringProperty
+from kivy.properties import ObjectProperty, StringProperty, ListProperty, DictProperty
 from kivy.uix.widget import Widget
+
+
+# TODO make this a dataclass when we have the required python version available
+class Presence(object):
+    def __init__(self, handle, status=None, message=None, timestamp=None):
+        if not handle:
+            raise ValueError("Handle must be provided!")
+
+        self._handle = handle
+        self._status = status
+        self._message = message
+        self._timestamp = timestamp
+
+    @property
+    def handle(self):
+        return self._handle
+
+    @property
+    def status(self):
+        return self._status
+
+    @status.setter
+    def status(self, presence):
+        self._status = presence
+
+    @property
+    def message(self):
+        return self._message
+
+    @message.setter
+    def message(self, message):
+        self._message = message
+
+    @property
+    def timestamp(self):
+        return self._timestamp
+
+    @timestamp.setter
+    def timestamp(self, timestamp):
+        self._timestamp = timestamp
 
 
 class PresencePublisher(Widget):
@@ -110,45 +149,60 @@ class PingTechPresenceUpdater(PresencePublisher):
 class PingTechPresenceReceiver(Widget):
     svc_conf = ObjectProperty(None)
 
+    handle_self = StringProperty()
+    contacts = DictProperty()
+
+    active_presence = ObjectProperty()
+    presence_list = ListProperty()
+
+    retrieval_error = ObjectProperty()
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def receive_status(self,
-                       list_handler=None,
-                       error_handler=None):
+    def receive_status(self):
         if self.svc_conf is None:
             return
 
         UrlRequest(url=self.svc_conf.get_endpoint(),
                    req_headers=self.svc_conf.auth_headers(),
-                   on_success=partial(self._on_presence_json, list_handler),
-                   on_failure=partial(self._on_failure, error_handler),
-                   on_error=partial(self._on_error, error_handler),
+                   on_success=self._on_presence_json,
+                   on_failure=self._on_failure,
+                   on_error=self._on_error,
                    timeout=10
                    )
 
-    @staticmethod
-    def _on_presence_json(list_handler, _request, result):
-        presence = dict()
+    def _on_presence_json(self, _request, presence_json):
+        self.retrieval_error = None
 
-        for p in result['entries']:
-            handle = p['handle']
-            del p['handle']
-            presence[handle] = p
+        presence_list = list()
+        active_presence = None
 
-        if list_handler:
-            list_handler(presence)
+        for e in presence_json.get('entries', []):
+            handle = e.get("handle", None)
 
-    def _on_failure(self, error_handler, _request, result):
+            contact = self.contacts.get(handle, None)
+            if contact:
+                status = e.get("status", None)
+                message = e.get("message", None)
+                timestamp = e.get("timestamp", None)
+                p = Presence(handle, status=status, message=message, timestamp=timestamp)
+                presence_list.append(p)
+
+                if handle == self.handle_self:
+                    active_presence = p
+
+        self.presence_list = presence_list
+        self.active_presence = active_presence
+
+    def _on_failure(self, _request, result):
         self._register_error(result)
-        if error_handler:
-            error_handler(result)
 
-    def _on_error(self, error_handler, _request, error):
+    def _on_error(self, _request, error):
         self._register_error(str(error))
-        if error_handler:
-            error_handler(str(error))
 
-    @staticmethod
-    def _register_error(error):
+    def _register_error(self, error):
+        self.retrieval_error = error
+        self.active_presence = None
+        self.presence_list = []
         Logger.error("Presence: Error while fetching presence: " + error)
