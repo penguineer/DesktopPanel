@@ -59,7 +59,7 @@ Builder.load_string("""
 
     canvas:
         Color:
-            rgba: root.presence_color
+            rgba: root._presence_color
         Line:
             rounded_rectangle: 
                 0, 0, \
@@ -67,49 +67,98 @@ Builder.load_string("""
                 5
 
     BoxLayout:
-        padding: 2
+        padding: [2, 2, 8, 2]
         spacing: 16
 
         AsyncImage:
             source: root.contact.avatar_url if root.contact and root.contact.avatar_url else '' 
             size: 48, 48
             size_hint: None, None
-            color: root.presence_color 
+            color: root._presence_color 
 
-        Label:
-            text: root.contact.view_name if root.contact and root.contact.view_name else '<None>' 
-            font_size: 18
-            halign: 'left'
-            valign: 'center'
-            font_name: 'assets/FiraMono-Regular.ttf'
-            text_size: self.size
-            color: root.presence_color 
+        BoxLayout:
+            orientation: 'vertical'
+            padding: 2
+            spacing: 4
+            
+            Label:
+                text: root.contact.view_name if root.contact and root.contact.view_name else '<None>' 
+                font_size: 18
+                halign: 'left'
+                valign: 'center'
+                font_name: 'assets/FiraMono-Regular.ttf'
+                text_size: self.size
+                color: root._presence_color
+                size_hint_y: 1
+                
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.5
+                
+                Label:
+                    text: root._displayed_presence.message \
+                        if root._displayed_presence and root._displayed_presence.message else ''
+                    font_size: 12
+                    text_size: self.size
+                    size_hint_x: 0.8
+                    shorten: True
+                    halign: 'left'
+                    color: root._presence_color
+            
+                Label:
+                    text: root._presence_since if root._presence_since else ''
+                    font_size: 12
+                    text_size: self.size
+                    size_hint_x: 0.2
+                    halign: 'right'
+                    color: root._presence_color
+                    
 """)
 
 
 class PresenceListItem(RelativeLayout):
     INACTIVE_COLOR = [177 / 256, 77 / 256, 76 / 256, 1]
 
-    presence_color = ColorProperty([177 / 256, 77 / 256, 76 / 256, 1])
+    _presence_color = ColorProperty([177 / 256, 77 / 256, 76 / 256, 1])
+    _presence_since = StringProperty(None, allownone=True)
 
     contact = ObjectProperty(None, allownone=True)
     presence_list = ListProperty()
+
+    _displayed_presence = ObjectProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         super(PresenceListItem, self).__init__(**kwargs)
 
         self.bind(contact=self._on_data)
         self.bind(presence_list=self._on_data)
+        self.bind(_displayed_presence=self._on_displayed_presence)
+
+        self.current_presence = None
 
     def _on_data(self, _instance, _value):
         if self.contact is None:
-            self.presence_color = PresenceListItem.INACTIVE_COLOR
+            self._displayed_presence = None
             return
 
         self_presence = list(filter(lambda el: el.handle == self.contact.handle, self.presence_list))
-        p = self_presence[0] if self_presence else None
-        c = PresenceColor.color_for(p.status) if p else None
-        self.presence_color = c if c else PresenceColor.absent_color_rgba
+        self._displayed_presence = self_presence[0] if self_presence else None
+
+    def _on_displayed_presence(self, _instance, _value):
+        if self._displayed_presence is None:
+            self._presence_color = PresenceListItem.INACTIVE_COLOR
+            return
+
+        c = PresenceColor.color_for(self._displayed_presence.status) if self._displayed_presence else None
+        self._presence_color = c if c else PresenceColor.absent_color_rgba
+
+        self._display_presence_since()
+
+    def _display_presence_since(self):
+        if self._displayed_presence is None:
+            self._presence_since = ""
+
+        self._presence_since = self._displayed_presence.timestamp
 
 
 Builder.load_string("""
