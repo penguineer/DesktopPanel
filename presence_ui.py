@@ -5,6 +5,7 @@ from kivy.lang import Builder
 from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
 from kivy.uix.relativelayout import RelativeLayout
 
+import util
 from dlg import FullscreenTimedModal
 from presence_conn import PresenceSvcCfg
 
@@ -118,6 +119,7 @@ Builder.load_string("""
 
 class PresenceListItem(RelativeLayout):
     INACTIVE_COLOR = [177 / 256, 77 / 256, 76 / 256, 1]
+    HDISP = util.HumanizedTimeDisplay(units='s', max_len=2)
 
     _presence_color = ColorProperty([177 / 256, 77 / 256, 76 / 256, 1])
     _presence_since = StringProperty(None, allownone=True)
@@ -134,7 +136,12 @@ class PresenceListItem(RelativeLayout):
         self.bind(presence_list=self._on_data)
         self.bind(_displayed_presence=self._on_displayed_presence)
 
-        self.current_presence = None
+        self._update_clock = Clock.schedule_interval(lambda dt: self._display_presence_since(),
+                                                     timeout=1)
+
+    def __del__(self):
+        if self._update_clock:
+            self._update_clock.cancel()
 
     def _on_data(self, _instance, _value):
         if self.contact is None:
@@ -155,10 +162,10 @@ class PresenceListItem(RelativeLayout):
         self._display_presence_since()
 
     def _display_presence_since(self):
-        if self._displayed_presence is None:
+        if self._displayed_presence is None or self._displayed_presence.timestamp is None:
             self._presence_since = ""
 
-        self._presence_since = self._displayed_presence.timestamp
+        self._presence_since = PresenceListItem.HDISP.convert_iso8601(self._displayed_presence.timestamp)
 
 
 Builder.load_string("""
