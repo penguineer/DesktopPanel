@@ -1,13 +1,12 @@
 """ Module for presence UI """
 
-from kivy import Logger
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
 from kivy.uix.relativelayout import RelativeLayout
 
 from dlg import FullscreenTimedModal
-from presence_conn import PresenceSvcCfg, PingTechPresenceReceiver
+from presence_conn import PresenceSvcCfg
 
 
 class Presence:
@@ -482,6 +481,7 @@ class PresenceDlg(FullscreenTimedModal):
 Builder.load_string("""
 #:import MqttPresenceUpdater presence_conn.MqttPresenceUpdater
 #:import PingTechPresenceUpdater presence_conn.PingTechPresenceUpdater
+#:import PingTechPresenceReceiver presence_conn.PingTechPresenceReceiver
 
 <PresenceTrayWidget>:
     size: 100, 50
@@ -513,6 +513,10 @@ Builder.load_string("""
     PingTechPresenceUpdater:
         id: pingtech_presence        
         svc_conf: root.presence_svc_cfg
+        
+    PingTechPresenceReceiver:
+        id: presence_receiver        
+        svc_conf: root.presence_svc_cfg
 """)
 
 
@@ -524,7 +528,6 @@ class PresenceTrayWidget(RelativeLayout):
     requested_presence = StringProperty(None)
 
     presence_svc_cfg = ObjectProperty(None)
-    presence_receiver = ObjectProperty(None)
 
     handle_self = StringProperty()
     handle_others = ListProperty()
@@ -659,14 +662,13 @@ class PresenceTrayWidget(RelativeLayout):
             handle=self.conf['self'],
             token=self.conf['token']
         )
-        self.presence_receiver = PingTechPresenceReceiver(self.presence_svc_cfg)
 
         self._presence_load()
 
     def _presence_load(self):
-        if self.presence_receiver:
-            self.presence_receiver.receive_status(self._on_presence_loaded,
-                                                  self._on_presence_load_failed)
+        if 'presence_receiver' in self.ids:
+            self.ids.presence_receiver.receive_status(self._on_presence_loaded,
+                                                      self._on_presence_load_failed)
 
     def _on_presence_loaded(self, remote_presence):
         for e in self.presence_list:
@@ -679,7 +681,6 @@ class PresenceTrayWidget(RelativeLayout):
 
         self.property('presence_list').dispatch(self)
 
-    def _on_presence_load_failed(self, error):
-        Logger.error("Presence: Error while fetching presence: " + str(error))
+    def _on_presence_load_failed(self, _error):
         for e in self.presence_list:
             e.presence = "unknown"

@@ -107,20 +107,23 @@ class PingTechPresenceUpdater(PresencePublisher):
         Logger.error("Presence: Got error on presence update: %s", str(error))
 
 
-class PingTechPresenceReceiver:
-    def __init__(self, svc: PresenceSvcCfg):
-        if svc is None:
-            raise ValueError("Service configuration must be provided!")
-        self._svc = svc
+class PingTechPresenceReceiver(Widget):
+    svc_conf = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def receive_status(self,
                        list_handler=None,
                        error_handler=None):
-        UrlRequest(url=self._svc.get_endpoint(),
-                   req_headers=self._svc.auth_headers(),
-                   on_success=partial(PingTechPresenceReceiver._on_presence_json, list_handler),
-                   on_failure=partial(PingTechPresenceReceiver._on_failure, error_handler),
-                   on_error=partial(PingTechPresenceReceiver._on_error, error_handler),
+        if self.svc_conf is None:
+            return
+
+        UrlRequest(url=self.svc_conf.get_endpoint(),
+                   req_headers=self.svc_conf.auth_headers(),
+                   on_success=partial(self._on_presence_json, list_handler),
+                   on_failure=partial(self._on_failure, error_handler),
+                   on_error=partial(self._on_error, error_handler),
                    timeout=10
                    )
 
@@ -136,12 +139,16 @@ class PingTechPresenceReceiver:
         if list_handler:
             list_handler(presence)
 
-    @staticmethod
-    def _on_failure(error_handler, _request, result):
+    def _on_failure(self, error_handler, _request, result):
+        self._register_error(result)
         if error_handler:
             error_handler(result)
 
-    @staticmethod
-    def _on_error(error_handler, _request, error):
+    def _on_error(self, error_handler, _request, error):
+        self._register_error(str(error))
         if error_handler:
             error_handler(str(error))
+
+    @staticmethod
+    def _register_error(error):
+        Logger.error("Presence: Error while fetching presence: " + error)
