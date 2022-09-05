@@ -5,6 +5,7 @@ from abc import abstractmethod
 from functools import partial
 
 from kivy.network.urlrequest import UrlRequest
+from kivy.properties import ObjectProperty, StringProperty
 from kivy.uix.widget import Widget
 
 
@@ -17,13 +18,16 @@ class PresencePublisher(Widget):
         pass
 
 
-class MqttPresenceUpdater(object):
-    def __init__(self, mqttc, topic):
-        self._mqttc = mqttc
-        self._topic = topic
+class MqttPresenceUpdater(PresencePublisher):
+    mqttc = ObjectProperty()
+    topic = StringProperty()
 
-    def update_status(self, status):
-        self._mqttc.publish(self._topic, status, qos=2)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def post_status(self, status, _message=None):
+        if self.mqttc and self.topic:
+            self.mqttc.publish(self.topic, status, qos=2)
 
 
 class PresenceSvcCfg(object):

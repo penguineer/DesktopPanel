@@ -10,7 +10,7 @@ from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.widget import Widget
 
 from dlg import FullscreenTimedModal
-from presence_conn import PresenceSvcCfg, PingTechPresenceReceiver, PingTechPresenceUpdater, MqttPresenceUpdater
+from presence_conn import PresenceSvcCfg, PingTechPresenceReceiver, PingTechPresenceUpdater
 
 
 class Presence:
@@ -483,6 +483,8 @@ class PresenceDlg(FullscreenTimedModal):
 
 
 Builder.load_string("""
+#:import MqttPresenceUpdater presence_conn.MqttPresenceUpdater
+
 <PresenceTrayWidget>:
     size: 100, 50
 
@@ -504,6 +506,11 @@ Builder.load_string("""
         color: root._presence_color 
         font_name: 'assets/FiraMono-Regular.ttf'
         pos: 0, 0+bottom-top
+
+    MqttPresenceUpdater:
+        id: mqtt_presence
+        mqttc: root.mqttc
+        topic: root.conf.get("mqtt-presence-topic", "") if root.conf else ""
 """)
 
 
@@ -517,8 +524,6 @@ class PresenceTrayWidget(RelativeLayout):
     presence_receiver = ObjectProperty(None)
 
     presence_emitter = ObjectProperty(None)
-
-    mqtt_presence_updater = ObjectProperty(None)
 
     handle_self = StringProperty()
     handle_others = ListProperty()
@@ -559,13 +564,6 @@ class PresenceTrayWidget(RelativeLayout):
         self._update_configuration()
 
     def _update_configuration(self) -> None:
-        if self.conf and self.mqttc:
-            presence_topic = self.conf.get('mqtt-presence-topic', None)
-            if presence_topic:
-                self.mqtt_presence_updater = MqttPresenceUpdater(self.mqttc, presence_topic)
-        else:
-            self.mqtt_presence_updater = None
-
         self._load_presence_config()
 
     def popup_handler(self, _cmd=None, _args=None):
@@ -613,8 +611,8 @@ class PresenceTrayWidget(RelativeLayout):
         if self.pr_sel is not None:
             self.pr_sel.active_presence = value
 
-        if self.mqtt_presence_updater is not None and value:
-            self.mqtt_presence_updater.update_status(value)
+        if 'mqtt_presence' in self.ids:
+            self.ids.mqtt_presence.post_status(value)
 
         if value in self.presence_texts:
             self._presence_color = PresenceColor.color_for(value)
