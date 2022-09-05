@@ -3,6 +3,7 @@
 import json
 from abc import abstractmethod
 
+from kivy.clock import Clock
 from kivy.logger import Logger
 from kivy.network.urlrequest import UrlRequest
 from kivy.properties import ObjectProperty, StringProperty, ListProperty, DictProperty
@@ -50,12 +51,23 @@ class Presence(object):
 
 
 class PresencePublisher(Widget):
+    error = StringProperty(None, allownone=True)
+    retrieval_trigger = ObjectProperty(None, allownone=True)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     @abstractmethod
     def post_status(self, status, message=None):
         pass
+
+    def _post_error(self, error):
+        self.error = error
+        self.property('error').dispatch(self)
+
+    def trigger_retrieval(self):
+        if self.retrieval_trigger:
+            Clock.schedule_once(lambda dt: self.retrieval_trigger())
 
 
 class MqttPresenceUpdater(PresencePublisher):
@@ -68,6 +80,9 @@ class MqttPresenceUpdater(PresencePublisher):
     def post_status(self, status, _message=None):
         if self.mqttc and self.topic:
             self.mqttc.publish(self.topic, status, qos=2)
+            self.trigger_retrieval()
+
+        self._post_error(None)
 
 
 class PresenceSvcCfg(object):
@@ -103,9 +118,6 @@ class PresenceSvcCfg(object):
 class PingTechPresenceUpdater(PresencePublisher):
     svc_conf = ObjectProperty(None, allownone=True)
 
-    emission_result = ObjectProperty(None, allownone=True)
-    emission_error = StringProperty(None, allownone=True)
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -130,9 +142,9 @@ class PingTechPresenceUpdater(PresencePublisher):
                    timeout=10
                    )
 
-    def _on_success(self, _request, result):
-        self.emission_result = result
-        self.emission_error = None
+    def _on_success(self, _request, _result):
+        self._post_error(None)
+        self.trigger_retrieval()
 
     def _on_failure(self, _request, result):
         self._register_error(result)
@@ -142,7 +154,7 @@ class PingTechPresenceUpdater(PresencePublisher):
 
     def _register_error(self, error):
         self.emission_result = None
-        self.emission_error = error
+        self._post_error(error)
         Logger.error("Presence: Got error on presence update: %s", str(error))
 
 
@@ -194,6 +206,8 @@ class PingTechPresenceReceiver(Widget):
 
         self.presence_list = presence_list
         self.active_presence = active_presence
+        # Make sure the presence is also sent when there was no change
+        self.property('active_presence').dispatch(self)
 
     def _on_failure(self, _request, result):
         self._register_error(result)
@@ -206,3 +220,35 @@ class PingTechPresenceReceiver(Widget):
         self.active_presence = None
         self.presence_list = []
         Logger.error("Presence: Error while fetching presence: " + error)
+
+
+class PresenceChangeHandler(PresencePublisher):
+    publishers = ListProperty()
+    retrieval_trigger = ObjectProperty(None, allownone=True)
+
+    active_presence = ObjectProperty(None, allownone=True)
+    requested_status = StringProperty(None, allownone=True)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.bind(active_presence=self._on_active_presence)
+
+    def _on_active_presence(self, _instance, _value):
+        if not self.requested_status:
+            return
+
+        if self.active_presence \
+                and self.active_presence.status == self.requested_status:
+            # Requested presence has been set
+            self.requested_status = None
+            self.trigger_retrieval()
+        else:
+            # There has been a change, post again
+            self.post_status(self.requested_status)
+
+    def post_status(self, status, _message=None):
+        self.requested_status = status
+
+        for publisher in self.publishers:
+            publisher.post_status(status)

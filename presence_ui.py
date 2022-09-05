@@ -325,7 +325,7 @@ Builder.load_string("""
                 background_normal: ''
                 background_down: ''
                 background_color: 0, 0, 0, 0
-                on_press: root.requested_status = "away"
+                on_press: root.request_callback("away")
 
             Button:
                 id: btn_present
@@ -333,7 +333,7 @@ Builder.load_string("""
                 background_normal: ''
                 background_down: ''
                 background_color: 0, 0, 0, 0
-                on_press: root.requested_status = "present"
+                on_press: root.request_callback("present")
 
         BoxLayout:
             orientation: 'horizontal'
@@ -346,7 +346,7 @@ Builder.load_string("""
                 background_normal: ''
                 background_down: ''
                 background_color: 0, 0, 0, 0
-                on_press: root.requested_status = "absent"
+                on_press: root.request_callback("absent")
 
             Button:
                 id: btn_occupied
@@ -354,7 +354,7 @@ Builder.load_string("""
                 background_normal: ''
                 background_down: ''
                 background_color: 0, 0, 0, 0
-                on_press: root.requested_status = "occupied"
+                on_press: root.request_callback("occupied")
 
         BoxLayout:
             orientation: 'horizontal'
@@ -399,6 +399,8 @@ class PresenceSelector(RelativeLayout, PresenceColor):
     active_status = StringProperty(None, allownone=True)
     requested_status = StringProperty(None, allownone=True)
 
+    request_callback = ObjectProperty()
+
     _ind_circle_color = ColorProperty([0, 0, 0, 1])
     _btn_absent_color = ColorProperty([0, 0, 0, 1])
     _btn_present_color = ColorProperty([0, 0, 0, 1])
@@ -426,7 +428,6 @@ class PresenceSelector(RelativeLayout, PresenceColor):
 Builder.load_string("""
 <PresenceDlg>:
     title: "Presence"
-    requested_status: ps.requested_status 
 
     AnchorLayout:
         anchor_x: 'right'
@@ -438,6 +439,8 @@ Builder.load_string("""
             id: ps
             size_hint: [None, None]
             active_status: root.active_presence.status if root.active_presence else "unknown"
+            requested_status: root.requested_status
+            request_callback: root.request_callback
 
     AnchorLayout:
         anchor_x: 'left'
@@ -462,25 +465,22 @@ class PresenceDlg(FullscreenTimedModal):
     contacts = DictProperty()
     presence_list = ListProperty()
 
+    request_callback = ObjectProperty()
+
     def __init__(self, **kwargs):
         super(PresenceDlg, self).__init__(**kwargs)
-
-        self.bind(requested_status=self._on_requested_presence)
-
-    # noinspection PyMethodMayBeStatic
-    def _on_requested_presence(self, instance, value):
-        instance.ids.ps.requested_status = value
 
 
 Builder.load_string("""
 #:import MqttPresenceUpdater presence_conn.MqttPresenceUpdater
 #:import PingTechPresenceUpdater presence_conn.PingTechPresenceUpdater
 #:import PingTechPresenceReceiver presence_conn.PingTechPresenceReceiver
+#:import PresenceChangeHandler presence_conn.PresenceChangeHandler
 
 <PresenceTrayWidget>:
     presence_list: presence_receiver.presence_list
-    active_presence: presence_receiver.active_presence
-
+    active_presence: presence_receiver.active_presence    
+    
     size: 100, 50
 
     #:set radius 5
@@ -510,12 +510,19 @@ Builder.load_string("""
     PingTechPresenceUpdater:
         id: pingtech_presence        
         svc_conf: root.presence_svc_cfg
+        retrieval_trigger: presence_receiver.receive_status
         
     PingTechPresenceReceiver:
         id: presence_receiver        
         svc_conf: root.presence_svc_cfg
         contacts: root.contacts
         handle_self: root.handle_self
+        
+    PresenceChangeHandler:
+        id: change_handler
+        publishers: [pingtech_presence, mqtt_presence]
+        active_presence: presence_receiver.active_presence
+        retrieval_trigger: root.close_popup
 """)
 
 
@@ -524,7 +531,6 @@ class PresenceTrayWidget(RelativeLayout):
     mqttc = ObjectProperty(None, allownone=True)
 
     active_presence = ObjectProperty(None, allownone=True)
-    requested_status = StringProperty(None, allownone=True)
 
     presence_svc_cfg = ObjectProperty(None, allownone=True)
 
@@ -550,7 +556,6 @@ class PresenceTrayWidget(RelativeLayout):
         self.bind(mqttc=self._load_presence_config)
 
         self.bind(active_presence=self._on_active_presence)
-        self.bind(requested_status=self._on_presence_request)
 
         self.pr_sel = None
 
@@ -563,25 +568,34 @@ class PresenceTrayWidget(RelativeLayout):
         if self.pr_sel is None:
             self.pr_sel = PresenceDlg()
 
+            self.pr_sel.request_callback = self.ids.change_handler.post_status
+            # This cannot change
+
             self.pr_sel.handle_self = self.handle_self
-            self.pr_sel.contacts = self.contacts
-            self.pr_sel.presence_list = self.presence_list
-            self.bind(presence_list=self.pr_sel.setter('presence_list'))
             self.bind(handle_self=self.pr_sel.setter('handle_self'))
+
+            self.pr_sel.contacts = self.contacts
             self.bind(contacts=self.pr_sel.setter('contacts'))
 
-            # Don't do this bind:
-            #   self.bind(active_presence=self.pr_sel.setter('active_presence'))
-            # This results in dangling property binds and repeated calls of inactive widgets.
+            self.pr_sel.presence_list = self.presence_list
+            self.bind(presence_list=self.pr_sel.setter('presence_list'))
+
+            self.pr_sel.requested_status = self.ids.change_handler.requested_status
+            self.ids.change_handler.bind(requested_status=self.pr_sel.setter('requested_status'))
 
             self.pr_sel.active_presence = self.active_presence
-            self.pr_sel.requested_status = self.requested_status
-            self.pr_sel.bind(requested_status=self.setter('requested_status'))
+            self.bind(active_presence=self.pr_sel.setter('active_presence'))
+
+            self.pr_sel.requested_status = self.ids.change_handler.requested_status
+            self.pr_sel.bind(requested_status=self.ids.change_handler.setter('requested_status'))
 
             self.pr_sel.open()
         else:
             self.pr_sel.dismiss()
             self.pr_sel = None
+
+    def close_popup(self):
+        Clock.schedule_once(lambda dt: self.pr_sel is None or self.pr_sel.dismiss())
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -589,19 +603,9 @@ class PresenceTrayWidget(RelativeLayout):
             return True
         return super(PresenceTrayWidget, self).on_touch_down(touch)
 
-    def _on_presence_request(self, _instance, value):
-        Clock.schedule_once(lambda dt: self.pr_sel is None or self.pr_sel.dismiss(), timeout=0.25)
-        Clock.schedule_once(lambda dt: self.ids.pingtech_presence.post_status(value))
-
-        # TODO this is a workaround to get the presence value back
-        Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status(), timeout=1)
-
     def _on_active_presence(self, _instance, value):
         if self.pr_sel is not None:
             self.pr_sel.active_presence = value
-
-        if 'mqtt_presence' in self.ids and value:
-            self.ids.mqtt_presence.post_status(value.status)
 
         if value and value.status in self.presence_texts:
             self._presence_color = PresenceColor.color_for(value.status) if value else None
