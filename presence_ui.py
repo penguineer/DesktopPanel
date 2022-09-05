@@ -517,6 +517,7 @@ Builder.load_string("""
         svc_conf: root.presence_svc_cfg
         contacts: root.contacts
         handle_self: root.handle_self
+        refresh_interval: root.conf.get("refresh-interval", 0) if root.conf else 0
         
     PresenceChangeHandler:
         id: change_handler

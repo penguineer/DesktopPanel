@@ -169,8 +169,26 @@ class PingTechPresenceReceiver(Widget):
 
     retrieval_error = ObjectProperty(None, allownone=True)
 
+    refresh_interval = NumericProperty(None, allownone=True)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        self.refresh_clock = None
+        self.bind(refresh_interval=self._on_refresh_interval)
+
+    def __del__(self):
+        if self.refresh_clock:
+            self.refresh_clock.cancel()
+
+    def _on_refresh_interval(self, _instance, _value):
+        if self.refresh_clock:
+            self.refresh_clock.cancel()
+            self.refresh_clock = None
+
+        if self.refresh_interval:
+            self.refresh_clock = Clock.schedule_interval(lambda dt: self.receive_status(),
+                                                         timeout=self.refresh_interval)
 
     def receive_status(self):
         if self.svc_conf is None:
