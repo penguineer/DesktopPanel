@@ -1,16 +1,13 @@
 """ Module for presence UI """
 
-from functools import partial
-
 from kivy import Logger
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
 from kivy.uix.relativelayout import RelativeLayout
-from kivy.uix.widget import Widget
 
 from dlg import FullscreenTimedModal
-from presence_conn import PresenceSvcCfg, PingTechPresenceReceiver, PingTechPresenceUpdater
+from presence_conn import PresenceSvcCfg, PingTechPresenceReceiver
 
 
 class Presence:
@@ -484,6 +481,7 @@ class PresenceDlg(FullscreenTimedModal):
 
 Builder.load_string("""
 #:import MqttPresenceUpdater presence_conn.MqttPresenceUpdater
+#:import PingTechPresenceUpdater presence_conn.PingTechPresenceUpdater
 
 <PresenceTrayWidget>:
     size: 100, 50
@@ -511,6 +509,10 @@ Builder.load_string("""
         id: mqtt_presence
         mqttc: root.mqttc
         topic: root.conf.get("mqtt-presence-topic", "") if root.conf else ""
+        
+    PingTechPresenceUpdater:
+        id: pingtech_presence        
+        svc_conf: root.presence_svc_cfg
 """)
 
 
@@ -521,9 +523,8 @@ class PresenceTrayWidget(RelativeLayout):
     active_presence = StringProperty(None)
     requested_presence = StringProperty(None)
 
+    presence_svc_cfg = ObjectProperty(None)
     presence_receiver = ObjectProperty(None)
-
-    presence_emitter = ObjectProperty(None)
 
     handle_self = StringProperty()
     handle_others = ListProperty()
@@ -601,7 +602,7 @@ class PresenceTrayWidget(RelativeLayout):
     def _on_presence_request(self, _instance, value):
         Clock.schedule_once(lambda dt: self.pr_sel is None or self.pr_sel.dismiss(), timeout=0.25)
         Clock.schedule_once(lambda dt: setattr(self, 'active_presence', value))
-        Clock.schedule_once(lambda dt: setattr(self.presence_emitter, 'requested_presence', value))
+        Clock.schedule_once(lambda dt: self.ids.pingtech_presence.post_status(value))
 
     def _on_active_presence(self, _instance, value):
         if self.presence_list is not None and len(self.presence_list):
@@ -653,14 +654,12 @@ class PresenceTrayWidget(RelativeLayout):
 
         self.presence_list = pl
 
-        presence_svc_cfg = PresenceSvcCfg(
+        self.presence_svc_cfg = PresenceSvcCfg(
             svc=self.conf['svc'],
             handle=self.conf['self'],
             token=self.conf['token']
         )
-        self.presence_receiver = PingTechPresenceReceiver(presence_svc_cfg)
-        self.presence_updater = PingTechPresenceUpdater(presence_svc_cfg)
-        self.presence_emitter = PresencePingTechEmitter(presence_updater=self.presence_updater)
+        self.presence_receiver = PingTechPresenceReceiver(self.presence_svc_cfg)
 
         self._presence_load()
 
@@ -684,39 +683,3 @@ class PresenceTrayWidget(RelativeLayout):
         Logger.error("Presence: Error while fetching presence: " + str(error))
         for e in self.presence_list:
             e.presence = "unknown"
-
-
-class PresencePingTechEmitter(Widget):
-    presence_updater = ObjectProperty(None)
-
-    requested_presence = StringProperty(None)
-    emission_result = ObjectProperty(None)
-    emission_error = StringProperty(None)
-
-    def __init__(self, presence_updater, **kwargs):
-        super(PresencePingTechEmitter, self).__init__(**kwargs)
-
-        if presence_updater is None:
-            raise ValueError("Updater must be provided!")
-
-        self.presence_updater = presence_updater
-
-        self.bind(requested_presence=self._on_requested_presence)
-
-    def _on_requested_presence(self, _, value):
-        if self.presence_updater:
-            Clock.schedule_once(lambda dt: partial(
-                self.presence_updater.update_status,
-                value,
-                None,
-                self._on_success,
-                self._on_error
-            )())
-
-    def _on_success(self, status):
-        self.emission_result = status
-        self.emission_error = None
-
-    def _on_error(self, error):
-        self.emission_error = error
-        Logger.error("Presence: Got error on presence update: %s", str(error))

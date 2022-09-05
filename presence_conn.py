@@ -4,6 +4,7 @@ import json
 from abc import abstractmethod
 from functools import partial
 
+from kivy.logger import Logger
 from kivy.network.urlrequest import UrlRequest
 from kivy.properties import ObjectProperty, StringProperty
 from kivy.uix.widget import Widget
@@ -60,17 +61,19 @@ class PresenceSvcCfg(object):
         return self._svc + "/" + endpoint
 
 
-class PingTechPresenceUpdater(object):
-    def __init__(self, svc: PresenceSvcCfg):
-        if svc is None:
-            raise ValueError("Service configuration must be provided!")
-        self._svc = svc
+class PingTechPresenceUpdater(PresencePublisher):
+    svc_conf = ObjectProperty(None)
 
-    def update_status(self,
-                      status,
-                      message=None,
-                      update_handler=None,
-                      error_handler=None):
+    emission_result = ObjectProperty(None)
+    emission_error = StringProperty(None)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def post_status(self, status, message=None):
+        if self.svc_conf is None:
+            return
+
         presence = {
             "status": status,
             "message": message if message else ""
@@ -78,30 +81,30 @@ class PingTechPresenceUpdater(object):
 
         body = json.dumps(presence)
 
-        UrlRequest(url=self._svc.post_endpoint(),
+        UrlRequest(url=self.svc_conf.post_endpoint(),
                    method="POST",
                    req_body=body,
-                   req_headers=self._svc.auth_headers(),
-                   on_success=partial(PingTechPresenceUpdater._on_success, update_handler),
-                   on_failure=partial(PingTechPresenceUpdater._on_failure, error_handler),
-                   on_error=partial(PingTechPresenceUpdater._on_error, error_handler),
+                   req_headers=self.svc_conf.auth_headers(),
+                   on_success=self._on_success,
+                   on_failure=self._on_failure,
+                   on_error=self._on_error,
                    timeout=10
                    )
 
-    @staticmethod
-    def _on_success(update_handler, _request, result):
-        if update_handler:
-            update_handler(result)
+    def _on_success(self, _request, result):
+        self.emission_result = result
+        self.emission_error = None
 
-    @staticmethod
-    def _on_failure(error_handler, _request, result):
-        if error_handler:
-            error_handler(result)
+    def _on_failure(self, _request, result):
+        self._register_error(result)
 
-    @staticmethod
-    def _on_error(error_handler, _request, error):
-        if error_handler:
-            error_handler(str(error))
+    def _on_error(self, _request, error):
+        self._register_error(str(error))
+
+    def _register_error(self, error):
+        self.emission_result = None
+        self.emission_error = error
+        Logger.error("Presence: Got error on presence update: %s", str(error))
 
 
 class PingTechPresenceReceiver:
