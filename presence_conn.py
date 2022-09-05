@@ -1,9 +1,20 @@
 """ Module for presence connectivity """
 
 import json
+from abc import abstractmethod
 from functools import partial
 
 from kivy.network.urlrequest import UrlRequest
+from kivy.uix.widget import Widget
+
+
+class PresencePublisher(Widget):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    @abstractmethod
+    def post_status(self, status, message=None):
+        pass
 
 
 class MqttPresenceUpdater(object):
