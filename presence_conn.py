@@ -6,7 +6,7 @@ from abc import abstractmethod
 from kivy.clock import Clock
 from kivy.logger import Logger
 from kivy.network.urlrequest import UrlRequest
-from kivy.properties import ObjectProperty, StringProperty, ListProperty, DictProperty
+from kivy.properties import ObjectProperty, StringProperty, ListProperty, DictProperty, NumericProperty
 from kivy.uix.widget import Widget
 
 
@@ -229,10 +229,14 @@ class PresenceChangeHandler(PresencePublisher):
     active_presence = ObjectProperty(None, allownone=True)
     requested_status = StringProperty(None, allownone=True)
 
+    repost_timeout = NumericProperty(None, allownone=True)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         self.bind(active_presence=self._on_active_presence)
+
+        self.repost_clock = None
 
     def _on_active_presence(self, _instance, _value):
         if not self.requested_status:
@@ -241,7 +245,7 @@ class PresenceChangeHandler(PresencePublisher):
         if self.active_presence \
                 and self.active_presence.status == self.requested_status:
             # Requested presence has been set
-            self.requested_status = None
+            self._cancel_repost()
             self.trigger_retrieval()
         else:
             # There has been a change, post again
@@ -250,5 +254,15 @@ class PresenceChangeHandler(PresencePublisher):
     def post_status(self, status, _message=None):
         self.requested_status = status
 
+        if self.repost_clock is None and self.repost_timeout:
+            self.repost_clock = Clock.schedule_once(lambda dt: self._cancel_repost(),
+                                                    timeout=self.repost_timeout)
+
         for publisher in self.publishers:
             publisher.post_status(status)
+
+    def _cancel_repost(self):
+        if self.repost_clock:
+            self.repost_clock.cancel()
+        self.repost_clock = None
+        self.requested_status = None

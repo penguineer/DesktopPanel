@@ -523,6 +523,7 @@ Builder.load_string("""
         publishers: [pingtech_presence, mqtt_presence]
         active_presence: presence_receiver.active_presence
         retrieval_trigger: root.close_popup
+        repost_timeout: 5 #  repost timeout [s] to fix race conditions with multiple clients
 """)
 
 
