@@ -2,6 +2,9 @@ import paho.mqtt.client as mqtt
 
 from kivy import Logger
 from kivy.clock import Clock
+from kivy.lang import Builder
+from kivy.properties import ColorProperty, ObjectProperty
+from kivy.uix.widget import Widget
 
 MQTT_TOPICS = []
 
@@ -74,3 +77,37 @@ def schedule_kivy_icon_color(tray_icon, color):
 
 def topic_matches_sub(sub, topic):
     return mqtt.topic_matches_sub(sub, topic)
+
+
+Builder.load_string("""
+#:import TrayIcon statusbar.TrayIcon
+
+
+<MqttClient>:
+    TrayIcon:
+        label: "MQTT"
+        icon: "assets/mqtt_icon_64px.png"
+        icon_color: root.icon_color
+""")
+
+
+class MqttClient(Widget):
+    conf = ObjectProperty(None, allownone=True)
+
+    backend = ObjectProperty(None, allownone=True)
+
+    icon_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
+
+    def __init__(self, **kwargs):
+        super(MqttClient, self).__init__(**kwargs)
+
+        self.bind(conf=self._on_conf)
+
+    def __del__(self):
+        if self.backend:
+            self.backend.loop_stop()
+
+    def _on_conf(self, _instance, _value):
+        if self.conf:
+            self.backend = create_client(self.conf)
+            update_tray_icon(self.backend, self)
