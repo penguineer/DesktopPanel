@@ -1,76 +1,113 @@
+import socket
+
 import paho.mqtt.client as mqtt
 
 from kivy import Logger
-from kivy.clock import Clock
+from kivy.lang import Builder
+from kivy.properties import ObjectProperty, StringProperty
 
-MQTT_TOPICS = []
+from statusbar import TrayIcon
 
-
-def append_topic(topic):
-    MQTT_TOPICS.append(topic)
-
-
-def add_topic_callback(mqttc, topic, cb):
-    mqttc.subscribe(topic)
-    MQTT_TOPICS.append(topic)
-
-    mqttc.message_callback_add(topic, cb)
+Builder.load_string("""
+<MqttClient>:
+    label: "MQTT"        
+    icon: "assets/mqtt_icon_64px.png"
+""")
 
 
-def on_connect(mqttc, _userdata, _flags, rc):
-    Logger.info("MQTT: Client connected with code %s", rc)
-    set_tray_icon_color(_userdata, status="connected")
+class MqttClient(TrayIcon):
+    conf = ObjectProperty(None, allownone=True)
 
-    for topic in MQTT_TOPICS:
-        mqttc.subscribe(topic)
+    backend = ObjectProperty(None, allownone=True)
 
+    status = StringProperty(None, allownone=True)
+    error = StringProperty(None, allownone=True)
 
-def on_disconnect(_mqttc, _userdata, rc):
-    Logger.info("MQTT: Client disconnected with code %s", rc)
-    set_tray_icon_color(_userdata, status="disconnected")
+    def __init__(self, **kwargs):
+        super(MqttClient, self).__init__(**kwargs)
 
+        self.bind(conf=self._on_conf)
+        self.bind(status=self._on_status)
 
-def create_client(config):
-    if "host" not in config:
-        raise ValueError("Missing MQTT host configuration! See template for an example.")
+        self.subscriptions = dict()
 
-    host = config.get("host")
+    def __del__(self):
+        self._disconnect()
 
-    client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_disconnect = on_disconnect
-    try:
-        client.connect(host, 1883, 60)
-    except ConnectionRefusedError as e:
-        Logger.warning("MQTT: Failed to connect to MQTT client, will try again: %s", e)
+    def _on_conf(self, _instance, _value):
+        self._connect()
 
-    client.loop_start()
+    def _on_status(self, _instance, _value):
+        if self.status == "connected":
+            self.icon_color = [0 / 256, 163 / 256, 86 / 256, 1]
+        elif self.status == "disconnected":
+            self.icon_color = [228 / 256, 5 / 256, 41 / 256, 1]
+        else:
+            self.icon_color = [77 / 256, 77 / 256, 76 / 256, 1]
 
-    return client
+    def subscribe(self, topic, cb):
+        self.subscriptions[topic] = cb
+        self._register_callback(topic, cb)
 
+    def unsubscribe(self, topic):
+        if topic in self.subscriptions:
+            del self.subscriptions[topic]
 
-def update_tray_icon(mqttc, tray_icon, status=None):
-    mqttc.user_data_set(tray_icon)
-    if status is None and mqttc.is_connected():
-        status = "connected"
-    set_tray_icon_color(tray_icon, status)
+    def publish(self, topic, payload, qos=2):
+        if self.backend:
+            self.backend.publish(topic, payload, qos=qos)
 
+    def _log_error(self, error):
+        self.error = error
+        if error:
+            Logger.warning("MQTT: %s", error)
 
-def set_tray_icon_color(tray_icon, status=None):
-    if tray_icon is None:
-        return
+    def _connect(self):
+        self.status = None
+        self.backend = None
 
-    if status == "connected":
-        schedule_kivy_icon_color(tray_icon, [0 / 256, 163 / 256, 86 / 256, 1])
-    elif status == "disconnected":
-        schedule_kivy_icon_color(tray_icon, [228 / 256, 5 / 256, 41 / 256, 1])
-    else:
-        schedule_kivy_icon_color(tray_icon, [77 / 256, 77 / 256, 76 / 256, 1])
+        if not self.conf:
+            self._disconnect()
 
+        host = self.conf.get("host", None)
+        if not host:
+            self._log_error("Missing MQTT host configuration! See template for an example.")
+            return
 
-def schedule_kivy_icon_color(tray_icon, color):
-    Clock.schedule_once(lambda dt: tray_icon.setter('icon_color')(tray_icon, color))
+        client = mqtt.Client()
+        client.on_connect = self._on_connect
+        client.on_disconnect = self._on_disconnect
+        try:
+            client.connect(host, 1883, 60)
 
+            client.loop_start()
 
-def topic_matches_sub(sub, topic):
-    return mqtt.topic_matches_sub(sub, topic)
+            self.backend = client
+        except ConnectionRefusedError as e:
+            self._log_error(f"Failed to connect to MQTT client, will try again: %s" % e)
+        except socket.gaierror as e:
+            self._log_error(f"Host not found, will try again: %s" % e)
+
+    def _on_connect(self, _backend, _userdata, _flags, rc):
+        Logger.info("MQTT: Client connected with code %s", rc)
+        self.status = "connected"
+
+        for topic, cb in self.subscriptions.items():
+            self._register_callback(topic, cb)
+
+    def _disconnect(self):
+        if self.backend:
+            self.backend.loop_stop()
+
+    def _on_disconnect(self, _backend, _userdata, rc):
+        Logger.info("MQTT: Client disconnected with code %s", rc)
+        self.status = "disconnected"
+
+    def _register_callback(self, topic, cb):
+        if self.backend:
+            self.backend.subscribe(topic)
+            self.backend.message_callback_add(topic, cb)
+
+    @staticmethod
+    def topic_matches_sub(sub, topic):
+        return mqtt.topic_matches_sub(sub, topic)
