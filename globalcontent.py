@@ -133,6 +133,9 @@ class ContextButton(Button):
 
 
 Builder.load_string("""
+#:import ScreenSaver screensaver.ScreenSaver
+#:import BacklightControl backlight.BacklightControl
+
 #:import StatusBar statusbar.StatusBar
 
 <GlobalContentArea>:
@@ -187,6 +190,17 @@ Builder.load_string("""
                 anchor_x: 'left'
                 anchor_y: 'top'
                 id: ContentPanel
+
+
+    # Screen saver on top of everything
+    ScreenSaver:
+        id: screensaver
+        conf: root.conf.get("screen", None) if root.conf else None
+        
+    BacklightControl:
+        id: backlight
+        conf: root.conf.get("screen", None) if root.conf else None
+        power: not screensaver.active        
 """)
 
 
@@ -255,6 +269,10 @@ class GlobalContentArea(AnchorLayout):
 
         self.bind(conf=self._on_conf)
         self.bind(mqttc=self._on_mqttc)
+
+        # Wake up the screensaver on every touch event
+        # Blocks the event if the screen saver is active, so that the user is not poking in the dark (literally)
+        self.bind(on_touch_down=lambda i, e: self.ids.screensaver.wake_up())
 
     def _on_conf(self, _instance, _conf: dict) -> None:
         for page in self._pages:
