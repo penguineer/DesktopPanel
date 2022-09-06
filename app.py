@@ -44,7 +44,6 @@ def sigint_handler(_signal, _frame):
 
 
 class TabbedPanelApp(App):
-    mqtt_icon = ObjectProperty(None)
     amqp_icon = ObjectProperty(None)
 
     conf_path = StringProperty()
@@ -77,12 +76,12 @@ class TabbedPanelApp(App):
     def _on_conf(self, _instance, conf: dict) -> None:
         if self.ca:
             self.ca.conf = conf
+        if self.mqttc:
+            self.mqttc.conf = conf.get("mqtt", None)
 
     def _on_mqttc(self, _instance, mqttc) -> None:
         if self.ca:
             self.ca.mqttc = mqttc
-
-        self.bind(mqtt_icon=lambda i, v: mqtt.update_tray_icon(self.mqttc, v))
 
     def build(self):
         home_page = HomePage()
@@ -92,14 +91,15 @@ class TabbedPanelApp(App):
         gtd_page.conf_lambda = lambda conf: conf.get("gtd", dict())
 
         ca = globalcontent.GlobalContentArea()
-        ca.mqttc = self.mqttc
         ca.conf = self.conf
         Clock.schedule_once(lambda dt: ca.register_content(home_page))
         Clock.schedule_once(lambda dt: ca.register_content(system_page))
         Clock.schedule_once(lambda dt: ca.register_content(gtd_page))
 
-        self.mqtt_icon = TrayIcon(label='MQTT', icon="assets/mqtt_icon_64px.png")
-        ca.status_bar.tray_bar.register_widget(self.mqtt_icon)
+        self.mqttc = mqtt.MqttClient()
+        self.mqttc.conf = self.conf
+        ca.mqttc = self.mqttc
+        ca.status_bar.tray_bar.register_widget(self.mqttc)
 
         self.amqp_icon = TrayIcon(label='AMQP', icon="assets/rabbitmq_icon_64px.png")
         ca.status_bar.tray_bar.register_widget(self.amqp_icon)
@@ -144,14 +144,9 @@ async def main():
     ])
     Window.size = (800, 480)
 
-    # TODO Move MQTT and AMQP into widgets so that they can reload the configuration
+    # TODO Move AMQP into widgets so that they can reload the configuration
     with open("desktop-panel-config.json", "r") as f:
         config = json.load(f)
-
-    if 'mqtt' not in config:
-        raise ValueError("Missing mqtt section in configuration! See template for an example.")
-    mqtt_config = config.get('mqtt')
-    client = mqtt.create_client(mqtt_config)
 
     amqp_access = amqp.AmqpAccessConfiguration.from_json_cfg(config)
     amqp_resource = amqp.AmqpResourceConfiguration.from_json_cfg(config)
@@ -163,7 +158,6 @@ async def main():
 
     # build and run app
     app = TabbedPanelApp()
-    app.mqttc = client
     app.schedule_update_configuration(config)
     # Setup path for automatic reloading
     # We still need to preload the configuration until MQTT and AMQP are moved into widgets
@@ -178,7 +172,6 @@ async def main():
     await app.async_run()
 
     amqp_conn.stop()
-    client.loop_stop()
 
 
 if __name__ == '__main__':
