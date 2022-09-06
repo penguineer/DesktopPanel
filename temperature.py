@@ -7,7 +7,6 @@ from kivy.uix.relativelayout import RelativeLayout
 
 import time
 
-import mqtt
 
 Builder.load_string("""
 <TemperaturePanel>:
@@ -170,7 +169,7 @@ class TemperatureView(RelativeLayout):
             return
 
         topic = self.conf.get("topic", None)
-        mqtt.add_topic_callback(self.mqttc, topic, self._mqtt_callback)
+        self.mqttc.subscribe(topic, self._mqtt_callback)
 
     def _mqtt_callback(self, _client, _userdata, message):
         # We received a measurement
