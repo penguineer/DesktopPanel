@@ -4,9 +4,24 @@
 
 Similar to the 
 [SmartBedroomPanel](https://github.com/penguineer/SmartBedroomPanel),
-but with with improved structure.
+but with improved structure.
 
 [![CodeQL](https://github.com/penguineer/DesktopPanel/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/penguineer/DesktopPanel/actions/workflows/codeql-analysis.yml)
+
+## Setup
+
+### Using the backlight control
+
+To allow backlight control as non-root user, this rule must be added to udev:
+```
+SUBSYSTEM=="backlight",RUN+="/bin/chmod 666 /sys/class/backlight/%k/ brightness /sys/class/backlight/%k/bl_power"
+```
+e.g. with this command:
+```bash
+echo 'SUBSYSTEM=="backlight",RUN+="/bin/chmod 666 /sys/class/backlight/%k/ brightness /sys/class/backlight/%k/bl_power"' | sudo tee -a /etc/udev/rules.d/backlight-permissions.rules
+```
+
+If no known board is detected the backlight sysfs environment is faked in a temp dir.
 
 ## API
 
