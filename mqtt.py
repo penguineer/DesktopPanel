@@ -1,3 +1,5 @@
+import socket
+
 import paho.mqtt.client as mqtt
 
 from kivy import Logger
@@ -46,6 +48,8 @@ def create_client(config):
         client.connect(host, 1883, 60)
     except ConnectionRefusedError as e:
         Logger.warning("MQTT: Failed to connect to MQTT client, will try again: %s", e)
+    except socket.gaierror as e:
+        Logger.warning("MQTT: Host not found, will try again: %s", e)
 
     client.loop_start()
 
