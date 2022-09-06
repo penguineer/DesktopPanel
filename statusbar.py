@@ -118,14 +118,14 @@ Builder.load_string("""
         size_hint: None, None
         size: 32, 16
         pos: 0, 0
-        text: root.label
+        text: root.label if root.label else ''
         font_size: 10        
         color: root.icon_color
 """)
 
 
 class TrayIcon(RelativeLayout):
-    label = StringProperty(None)
+    label = StringProperty(None, allownone=True)
     icon = StringProperty(None)
     icon_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
 
