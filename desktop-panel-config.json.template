@@ -1,4 +1,8 @@
 {
+  "screen": {
+    "brightness": <maximum backlight brightness>,
+    "timeout": <timeout in seconds as integer, 0 to deactivate>
+  },
   "mqtt": {
     "host": "<MQTT Host>"
   },
