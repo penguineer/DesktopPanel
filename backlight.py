@@ -41,8 +41,9 @@ class BacklightControl(Widget):
     def _on_conf(self, _instance, _value):
         # cache maximal brightness setting
         self._max_br = min(100, self.conf.get("brightness", 100) if self.conf else 100)
-        # update
-        self._on_brightness(_instance, _value)
+        # update, if switched on
+        if self.power:
+            self._on_brightness(_instance, _value)
 
     def _on_brightness(self, _instance, _value):
         if self._backlight:

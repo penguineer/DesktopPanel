@@ -1,3 +1,4 @@
+from kivy.core.window import Window
 from kivy.lang import Builder
 
 from kivy.uix.anchorlayout import AnchorLayout
@@ -272,7 +273,7 @@ class GlobalContentArea(AnchorLayout):
 
         # Wake up the screensaver on every touch event
         # Blocks the event if the screen saver is active, so that the user is not poking in the dark (literally)
-        self.bind(on_touch_down=lambda i, e: self.ids.screensaver.wake_up())
+        Window.bind(on_touch_down=lambda i, e: self.ids.screensaver.wake_up())
 
     def _on_conf(self, _instance, _conf: dict) -> None:
         for page in self._pages:
