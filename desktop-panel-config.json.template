@@ -25,7 +25,8 @@
         }
     },
     "mqtt-presence-topic": "<MQTT presence topic>",
-    "refresh-interval": <optional refresh interval in s>
+    "refresh-interval": <optional refresh interval in s>,
+    "screensaver-disabled-states": ["optional", "list of presence states", "that disable the screensaver"]
   },
   "spaceApi": {
     "url": "<spaceapi url>",
