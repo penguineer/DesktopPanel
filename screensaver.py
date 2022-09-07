@@ -65,7 +65,9 @@ class ScreenSaver(Label):
         if self._anim:
             self._anim.cancel(self)
 
-        self._anim = Animation(transparency=target, duration=0.5)
+        # Slow fade-out, quick fade-in
+        duration = 0.1 if target else 0.5
+        self._anim = Animation(transparency=target, duration=duration)
         self._anim.bind(on_complete=lambda e, i: self._animation_complete())
 
         self._anim.start(self)

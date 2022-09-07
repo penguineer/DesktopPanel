@@ -58,7 +58,7 @@ class BacklightControl(Widget):
         if self.power:
             self._cancel_backlight_clock()
             self._backlight.power = True
-            self._backlight.fade_duration = 0.1
+            self._backlight.fade_duration = 0.2
         else:
             self._backlight.fade_duration = 0.7
             self._backlight_clock = Clock.schedule_once(lambda dt: self._power_off(), timeout=0.75)
