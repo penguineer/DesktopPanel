@@ -1,5 +1,5 @@
 from kivy.lang import Builder
-from kivy.properties import ColorProperty, StringProperty
+from kivy.properties import ColorProperty, StringProperty, ObjectProperty
 from kivy.uix.modalview import ModalView
 
 Builder.load_string("""
@@ -110,13 +110,32 @@ class FullscreenTimedModal(ModalView):
 
     title = StringProperty("")
 
+    screensaver = ObjectProperty(None, allownone=True)
+    """ Expects a screensaver instance. If set, the dialog will disable the screensaver
+        while it is open.
+    """
+
     def __init__(self, title=None, **kwargs):
         super(FullscreenTimedModal, self).__init__(**kwargs)
 
         self.ids.CloseBtn.bind(on_press=self.dismiss)
+
+        self.bind(on_open=self._on_open)
+        self.bind(on_dismiss=self._on_dismiss)
 
         if title is not None:
             self.title = title
 
     def is_inactive(self):
         return self._window is None
+
+    def _on_open(self, _e):
+        if self.screensaver:
+            self.screensaver.disabled = True
+
+    def _on_dismiss(self, _e):
+        if self.screensaver:
+            self.screensaver.disabled = False
+
+        # return False to actually dismiss the window
+        return False
