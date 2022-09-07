@@ -533,7 +533,7 @@ Builder.load_string("""
 
 <PresenceTrayWidget>:
     presence_list: presence_receiver.presence_list
-    active_presence: presence_receiver.active_presence    
+    active_presence: presence_receiver.active_presence
     
     size: 100, 50
 
@@ -595,6 +595,8 @@ class PresenceTrayWidget(RelativeLayout):
     handle_others = ListProperty()
     contacts = DictProperty()
     presence_list = ListProperty()
+
+    screensaver_disabled_states = ListProperty([])
 
     _presence_color = ColorProperty(PresenceColor.absent_color_rgba)
     _presence_text = StringProperty(None)
@@ -675,6 +677,9 @@ class PresenceTrayWidget(RelativeLayout):
             self._presence_color = PresenceColor.color_for("absent")
             self._presence_text = ""
 
+        if self.active_presence and self.screensaver:
+            self.screensaver.timeout = 0 if self.active_presence.status in self.screensaver_disabled_states else None
+
     def _load_presence_config(self, _instance, _value):
         if self.conf is None:
             self.handle_self = ""
@@ -683,6 +688,7 @@ class PresenceTrayWidget(RelativeLayout):
             self.presence_receiver = None
             self.presence_updater = None
             self.presence_emitter = None
+            self.screensaver_disabled_states = []
             return
 
         self.handle_self = self.conf.get('self', None)
@@ -708,3 +714,6 @@ class PresenceTrayWidget(RelativeLayout):
         )
 
         Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
+
+        self.screensaver_disabled_states = self.conf.get("screensaver-disabled-states", [])
+
