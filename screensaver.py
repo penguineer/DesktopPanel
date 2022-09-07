@@ -22,8 +22,19 @@ Builder.load_string("""
 class ScreenSaver(Label):
     conf = DictProperty(None, allownone=True)
 
+    timeout = NumericProperty(None, allownone=True)
+    """ Overwrite the timeout configuration
+
+        if set to a value, overwrites the timeout configuration,
+        if set to None it has no effect
+    """
+
     disabled = BooleanProperty(False)
-    """ disable the screensaver (similar to timeout 0)"""
+    """ disable the screensaver (similar to timeout 0)
+
+        this allows to disable the screensaver (i.e. for a modal dialog) without
+        changing the timeout settings
+    """
 
     # Start in an active state and wake up immediately
     active = BooleanProperty(True)
@@ -43,6 +54,7 @@ class ScreenSaver(Label):
 
         self.bind(conf=self._on_conf)
 
+        self.bind(timeout=self._on_timeout)
         self.bind(disabled=self._on_disabled)
 
         self.bind(active=self._on_active)
@@ -60,6 +72,13 @@ class ScreenSaver(Label):
 
     def _on_conf(self, _instance, _value):
         self._reset_countdown()
+
+    def _on_timeout(self, _instance, _value):
+        if not self.disabled:
+            if self.timeout is not None and self.timeout == 0:
+                self.wake_up()
+            elif not self.active:
+                self._reset_countdown()
 
     def _on_disabled(self, _instance, _value):
         if self.disabled:
@@ -117,7 +136,11 @@ class ScreenSaver(Label):
             self.countdown = self.countdown - 1
 
     def _reset_countdown(self):
-        timeout = int(self.conf.get("timeout", 0) if self.conf else 0)
+        # timeout is:
+        #   self.timeout, unless None
+        #   "timeout" from the configuration, unless None
+        #   otherwise 0, i.e. no screensaver
+        timeout = self.timeout if self.timeout is not None else int(self.conf.get("timeout", 0) if self.conf else 0)
         self.countdown = timeout if timeout else None
 
     def _cancel_countdown(self):
