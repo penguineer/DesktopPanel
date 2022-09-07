@@ -162,10 +162,8 @@ class PresenceListItem(RelativeLayout):
         self._display_presence_since()
 
     def _display_presence_since(self):
-        if self._displayed_presence is None or self._displayed_presence.timestamp is None:
-            self._presence_since = ""
-
-        self._presence_since = PresenceListItem.HDISP.convert_iso8601(self._displayed_presence.timestamp)
+        self._presence_since = PresenceListItem.HDISP.convert_iso8601(self._displayed_presence.timestamp) \
+            if self._displayed_presence and self._displayed_presence.timestamp else ""
 
 
 Builder.load_string("""
