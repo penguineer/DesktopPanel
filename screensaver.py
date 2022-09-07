@@ -22,6 +22,9 @@ Builder.load_string("""
 class ScreenSaver(Label):
     conf = DictProperty(None, allownone=True)
 
+    disabled = BooleanProperty(False)
+    """ disable the screensaver (similar to timeout 0)"""
+
     # Start in an active state and wake up immediately
     active = BooleanProperty(True)
     transparency = BoundedNumericProperty(0, min=0, max=1)
@@ -35,9 +38,12 @@ class ScreenSaver(Label):
     def __init__(self, **kwargs):
         super(ScreenSaver, self).__init__(**kwargs)
 
+        self._anim = None
+        self._screen_clock = None
+
         self.bind(conf=self._on_conf)
 
-        self._anim = None
+        self.bind(disabled=self._on_disabled)
 
         self.bind(active=self._on_active)
         Clock.schedule_once(lambda dt: self.wake_up(), timeout=0.5)
@@ -45,8 +51,6 @@ class ScreenSaver(Label):
         self.bind(countdown=self._on_countdown)
         self._countdown_clock = Clock.schedule_interval(lambda dt: self._on_countdown_clock(),
                                                         timeout=1)
-
-        self._screen_clock = None
 
     def __del__(self):
         if self._countdown_clock:
@@ -56,6 +60,13 @@ class ScreenSaver(Label):
 
     def _on_conf(self, _instance, _value):
         self._reset_countdown()
+
+    def _on_disabled(self, _instance, _value):
+        if self.disabled:
+            self.wake_up()
+            self._cancel_countdown()
+        else:
+            self._reset_countdown()
 
     def _on_active(self, _instance, _value):
         target_transparency = 0 if self.active else 1
@@ -98,7 +109,7 @@ class ScreenSaver(Label):
         if self.countdown is None or self.countdown > 0:
             return
 
-        self.countdown = None
+        self._cancel_countdown()
         self.active = True
 
     def _on_countdown_clock(self):
@@ -108,3 +119,6 @@ class ScreenSaver(Label):
     def _reset_countdown(self):
         timeout = int(self.conf.get("timeout", 0) if self.conf else 0)
         self.countdown = timeout if timeout else None
+
+    def _cancel_countdown(self):
+        self.countdown = None
