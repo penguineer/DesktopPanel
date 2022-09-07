@@ -153,6 +153,7 @@ Builder.load_string("""
         PresenceTrayWidget:
             id: presence
             mqttc: root.mqttc
+            screensaver: root.screensaver
             size_hint_x: None
             
         SpaceStatusWidget:
@@ -172,6 +173,7 @@ Builder.load_string("""
 class StatusBar(RelativeLayout):
     conf = DictProperty(None)
     mqttc = ObjectProperty(None)
+    screensaver = ObjectProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         super(RelativeLayout, self).__init__(**kwargs)

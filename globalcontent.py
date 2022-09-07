@@ -143,6 +143,8 @@ Builder.load_string("""
     anchor_y: 'top'
     anchor_x: 'left'
     
+    screensaver: screensaver
+    
     canvas:
         #:set border_spacing 10
         Color:
@@ -185,6 +187,7 @@ Builder.load_string("""
                 id: StatusBar
                 conf: root.conf
                 mqttc: root.mqttc
+                screensaver: root.screensaver
     
             AnchorLayout:          
                 size: [root.width - root.tab_width-4, root.height - root.status_height - 4]
@@ -216,6 +219,8 @@ class GlobalContentArea(AnchorLayout):
 
     mqttc = ObjectProperty(None)
     """MQTT client for the application"""
+
+    screensaver = ObjectProperty(None, allownone=True)
 
     background_color = ColorProperty([0, 0, 0, 1])
     """Background color, in the format (r, g, b, a).

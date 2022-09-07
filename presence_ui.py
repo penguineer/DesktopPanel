@@ -585,6 +585,7 @@ Builder.load_string("""
 class PresenceTrayWidget(RelativeLayout):
     conf = DictProperty(None, allownone=True)
     mqttc = ObjectProperty(None, allownone=True)
+    screensaver = ObjectProperty(None, allownone=True)
 
     active_presence = ObjectProperty(None, allownone=True)
 
@@ -626,6 +627,9 @@ class PresenceTrayWidget(RelativeLayout):
 
             self.pr_sel.request_callback = self.ids.change_handler.post_status
             # This cannot change
+
+            self.pr_sel.screensaver = self.screensaver
+            self.bind(screensaver=self.pr_sel.setter('screensaver'))
 
             self.pr_sel.handle_self = self.handle_self
             self.bind(handle_self=self.pr_sel.setter('handle_self'))
