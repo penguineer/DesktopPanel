@@ -238,7 +238,7 @@ class AmqpConnector(object):
         if not self._terminating:
             Logger.warning("AMQP: Connection closed unexpectedly, reopening in 5 seconds: %s", reason)
             self._channel = None
-            self._connection.ioloop.call_later(5, self._reconnect)
+            asyncio.get_running_loop().call_later(5, self._reconnect)
 
     def _on_channel_open(self, channel):
         self._channel = channel
