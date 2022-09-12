@@ -14,11 +14,11 @@ but with improved structure.
 
 To allow backlight control as non-root user, this rule must be added to udev:
 ```
-SUBSYSTEM=="backlight",RUN+="/bin/chmod 666 /sys/class/backlight/%k/ brightness /sys/class/backlight/%k/bl_power"
+SUBSYSTEM=="backlight",RUN+="/bin/chmod 666 /sys/class/backlight/%k/brightness /sys/class/backlight/%k/bl_power"
 ```
 e.g. with this command:
 ```bash
-echo 'SUBSYSTEM=="backlight",RUN+="/bin/chmod 666 /sys/class/backlight/%k/ brightness /sys/class/backlight/%k/bl_power"' | sudo tee -a /etc/udev/rules.d/backlight-permissions.rules
+echo 'SUBSYSTEM=="backlight",RUN+="/bin/chmod 666 /sys/class/backlight/%k/brightness /sys/class/backlight/%k/bl_power"' | sudo tee -a /etc/udev/rules.d/backlight-permissions.rules
 ```
 
 If no known board is detected the backlight sysfs environment is faked in a temp dir.
