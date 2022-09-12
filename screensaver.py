@@ -74,18 +74,13 @@ class ScreenSaver(Label):
         self._reset_countdown()
 
     def _on_timeout(self, _instance, _value):
-        if not self.disabled:
-            if self.timeout is not None and self.timeout == 0:
-                self.wake_up()
-            elif not self.active:
-                self._reset_countdown()
+        if self.timeout is not None and self.timeout == 0:
+            self.wake_up()
+        elif not self.active:
+            self._reset_countdown()
 
     def _on_disabled(self, _instance, _value):
-        if self.disabled:
-            self.wake_up()
-            self._cancel_countdown()
-        else:
-            self._reset_countdown()
+        self.wake_up()
 
     def _on_active(self, _instance, _value):
         target_transparency = 0 if self.active else 1
@@ -125,7 +120,7 @@ class ScreenSaver(Label):
         return current_state
 
     def _on_countdown(self, _instance, _value):
-        if self.countdown is None or self.countdown > 0:
+        if self.disabled or self.countdown is None or self.countdown > 0:
             return
 
         self._cancel_countdown()
