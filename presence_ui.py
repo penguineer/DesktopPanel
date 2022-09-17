@@ -5,7 +5,6 @@ from kivy.lang import Builder
 from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
 from kivy.uix.relativelayout import RelativeLayout
 
-import util
 from dlg import FullscreenTimedModal
 from presence_conn import PresenceSvcCfg
 
@@ -122,8 +121,7 @@ Builder.load_string("""
 
 class PresenceListItem(RelativeLayout):
     INACTIVE_COLOR = [177 / 256, 77 / 256, 76 / 256, 1]
-    HDISP = util.HumanizedTimeDisplay(units='s', max_len=2)
-
+    
     _presence_color = ColorProperty([177 / 256, 77 / 256, 76 / 256, 1])
     _presence_since = StringProperty(None, allownone=True)
 
