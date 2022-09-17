@@ -87,7 +87,7 @@ Builder.load_string("""
 
 
 class TemperatureView(RelativeLayout):
-    MEASUREMENT_TIMEOUT = 60  # [s]
+    MEASUREMENT_TIMEOUT = 20  # [s]
 
     mqttc = ObjectProperty(None)
     conf = DictProperty(None)
@@ -104,7 +104,7 @@ class TemperatureView(RelativeLayout):
         self.measure_instant = None
         # Schedule the check
         # (Scheduling does not have to be super precise, so we chose a rather long interval.)
-        Clock.schedule_interval(lambda dt: self._check_measurement_age(), 10)
+        Clock.schedule_interval(lambda dt: self._check_measurement_age(), 5)
 
     def on_conf(self, _instance, _conf: list) -> None:
         self._update_mqtt()
