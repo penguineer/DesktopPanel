@@ -54,6 +54,8 @@ class PresenceColor:
 
 
 Builder.load_string("""
+#: import HumanizedDurationLabel timewidget.HumanizedDurationLabel
+
 <PresenceListItem>:
     size: 250, 52
     size_hint: 1, None
@@ -106,8 +108,9 @@ Builder.load_string("""
                     halign: 'left'
                     color: root._presence_color
             
-                Label:
-                    text: root._presence_since if root._presence_since else ''
+                HumanizedDurationLabel:
+                    iso_instant: root._displayed_presence.timestamp if root._displayed_presence else None
+                    update: True
                     font_size: 12
                     text_size: self.size
                     size_hint_x: 0.2
@@ -134,14 +137,6 @@ class PresenceListItem(RelativeLayout):
 
         self.bind(contact=self._on_data)
         self.bind(presence_list=self._on_data)
-        self.bind(_displayed_presence=self._on_displayed_presence)
-
-        self._update_clock = Clock.schedule_interval(lambda dt: self._display_presence_since(),
-                                                     timeout=1)
-
-    def __del__(self):
-        if self._update_clock:
-            self._update_clock.cancel()
 
     def _on_data(self, _instance, _value):
         if self.contact is None:
@@ -151,19 +146,13 @@ class PresenceListItem(RelativeLayout):
         self_presence = list(filter(lambda el: el.handle == self.contact.handle, self.presence_list))
         self._displayed_presence = self_presence[0] if self_presence else None
 
-    def _on_displayed_presence(self, _instance, _value):
+    def on__displayed_presence(self, _instance, _value):
         if self._displayed_presence is None:
             self._presence_color = PresenceListItem.INACTIVE_COLOR
             return
 
         c = PresenceColor.color_for(self._displayed_presence.status) if self._displayed_presence else None
         self._presence_color = c if c else PresenceColor.absent_color_rgba
-
-        self._display_presence_since()
-
-    def _display_presence_since(self):
-        self._presence_since = PresenceListItem.HDISP.convert_iso8601(self._displayed_presence.timestamp) \
-            if self._displayed_presence and self._displayed_presence.timestamp else ""
 
 
 Builder.load_string("""
