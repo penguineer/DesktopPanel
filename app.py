@@ -114,9 +114,12 @@ class TabbedPanelApp(App):
     def select(self, index):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
 
-    def popup_presence_dlg(self, _cmd, _args):
+    def popup_presence_dlg(self):
         if self.ca:
             self.ca.status_bar.ids.presence.popup_handler()
+
+    def schedule_popup_presence_dlg(self, _cmd, _args):
+        Clock.schedule_once(lambda dt: self.popup_presence_dlg())
 
     def schedule_update_configuration(self, conf):
         Clock.schedule_once(lambda dt: self.setter('conf')(self, conf))
@@ -167,7 +170,7 @@ async def main():
     # TODO bind command handlers
     cmd_dispatch.add_command_handler("test", command_log)
     cmd_dispatch.add_command_handler("screenshot", command_screenshot)
-    cmd_dispatch.add_command_handler("presence popup", app.popup_presence_dlg)
+    cmd_dispatch.add_command_handler("presence popup", app.schedule_popup_presence_dlg)
 
     await app.async_run()
 
