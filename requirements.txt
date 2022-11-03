@@ -1,5 +1,5 @@
-Cython==0.29.28
-Kivy==2.1.0
+Cython~=0.29
+Kivy~=2.1
 paho-mqtt==1.6.1
 pyserial==3.5
 watchdog==2.1.7
