@@ -154,8 +154,7 @@ Builder.load_string("""
         size_hint: None, None
 
         Label:
-            size: root.width, 64
-            size_hint: None, None
+            size_hint: 1, 1
             canvas:
                 # Background
                 Color:

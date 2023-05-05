@@ -40,6 +40,9 @@
       }
   },
   "system": {
+    "power": {
+        "topic": "<MQTT topic>"
+    },
     "temperatures": [
       {
         "label": "<label>",
