@@ -18,7 +18,7 @@ Builder.load_string("""
     AnchorLayout:
         anchor_x: 'right'
         anchor_y: 'bottom'
-        padding: 10
+        padding: [0, 0, 20, 10]
     
         BoxLayout:
             size: 95, 160
