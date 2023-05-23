@@ -23,6 +23,30 @@ echo 'SUBSYSTEM=="backlight",RUN+="/bin/chmod 666 /sys/class/backlight/%k/bright
 
 If no known board is detected the backlight sysfs environment is faked in a temp dir.
 
+## Run with Docker
+
+Because access to several system resources is needed, the container must be started with elevated access rights. In addition, configuration files need to be made available.
+
+The below example shows how to run the container on the command line.
+Please do not forget to set the variables accordingly and make sure you provide a valid absolute path to the configuration files.
+
+```bash
+VERSION=latest
+CFGPATH=/path/to/desktop-panel-config.json
+ISSUELISTPATH=/path/to/issuelist.json
+
+docker run -d -it \
+           --name desktop-panel \
+           --restart always \
+           --privileged \
+           --mount "type=bind,source=${CFGPATH},target=/app/desktop-panel-config.json,readonly" \
+           --mount "type=bind,source=${ISSUELISTPATH},target=/app/issuelist.json,readonly" \
+           -e "TZ=Europe/Berlin" \
+           mrtux/desktop-panel:$VERSION
+```
+
+Note that with these mounts the application will still react to changes to the JSON files.
+
 ## API
 
 ## AMQP
