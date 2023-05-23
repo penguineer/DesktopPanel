@@ -90,3 +90,7 @@ If an MQTT topic is provided in `mqtt.presence-topic` the presence status will b
 ## Resources
 
 Uses [Free Icons from the Streamline Icons Pack](https://streamlineicons.com/).
+
+## License
+
+[MIT](LICENSE.txt) © 2021-2023 Stefan Haun and contributors
