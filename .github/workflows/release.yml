@@ -3,17 +3,21 @@ name: Create Release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*.*.*'
 
 jobs:
-  build:
-    name: "Release"
+  release:
+
     runs-on: ubuntu-latest
+
     steps:
-      - name: "Check-out"
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref }}
+          # Needed for correct Maven version detection
           fetch-depth: 0
+
       - name: "Generate release changelog"
         id: generate-release-changelog
         uses: heinrichreimer/github-changelog-generator-action@v2.3
@@ -22,15 +26,17 @@ jobs:
           onlyLastTag: "true" # set to false if no tags exist (buggy with only one tag)
           stripHeaders: "true"
           stripGeneratorNotice: "true"
+
       - name: Extract the VERSION name
         id: get-version
-        run: echo ::set-output name=VERSION::${GITHUB_REF#refs/tags/}
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
       - name: "Create GitHub release"
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref }}
           name: "${{ steps.get-version.outputs.VERSION }}"
           body: "${{ steps.generate-release-changelog.outputs.changelog }}"
-          prerelease: ${{ startsWith(steps.get-version.outputs.VERSION, 'v0.') }}
+          prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
-          draft: True
+          draft: true
