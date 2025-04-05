@@ -21,12 +21,14 @@ Builder.load_string("""
         padding: [0, 0, 20, 10]
     
         BoxLayout:
-            size: 95, 160
             orientation: 'vertical'
             spacing: 10
             size_hint: None, None
+            width: temperatures.width
+            height: temperatures.height + power.height + 10
     
             PowerWidget:
+                id: power
                 conf: root.conf.get("power", {}) if root.conf else {}
                 mqttc: root.mqttc
     
