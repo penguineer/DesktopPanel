@@ -1,4 +1,4 @@
-FROM mrtux/kivy-rpi-headless:2.1-bullseye
+FROM mrtux/kivy-rpi-headless:2.1-bookworm-1
 
 RUN mkdir -p /root/.kivy \
     && echo "[graphics]\nshow_cursor = 0"  > /root/.kivy/config.ini
