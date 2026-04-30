@@ -1,8 +1,10 @@
 """ Module for presence connectivity """
 
+import datetime
 import json
 from abc import abstractmethod
 
+import dateutil.parser
 from kivy.clock import Clock
 from kivy.logger import Logger
 from kivy.network.urlrequest import UrlRequest
@@ -48,6 +50,90 @@ class Presence(object):
     @timestamp.setter
     def timestamp(self, timestamp):
         self._timestamp = timestamp
+
+
+class PresenceTrackedEntry(object):
+    """A single presence status entry with start and optional end time."""
+
+    def __init__(self, status, since, until=None):
+        self._status = status
+        self._since = since
+        self._until = until
+
+    @property
+    def status(self):
+        return self._status
+
+    @property
+    def since(self):
+        return self._since
+
+    @property
+    def until(self):
+        return self._until
+
+    @property
+    def is_current(self):
+        return self._until is None
+
+    @property
+    def duration_ms(self):
+        """Duration in milliseconds for past entries; None for the current entry."""
+        if self._until is None:
+            return None
+        try:
+            since_dt = dateutil.parser.parse(self._since)
+            until_dt = dateutil.parser.parse(self._until)
+            return int((until_dt - since_dt).total_seconds() * 1000)
+        except (ValueError, TypeError):
+            return None
+
+
+class PresenceTracker(Widget):
+    """Tracks presence status changes and maintains a local history list.
+
+    When the service does not deliver past entries, this widget caches
+    entries locally from application launch.
+    """
+
+    active_presence = ObjectProperty(None, allownone=True)
+    tracked_entries = ListProperty()
+
+    def __init__(self, **kwargs):
+        super(PresenceTracker, self).__init__(**kwargs)
+
+        self._last_status = None
+        self.bind(active_presence=self._on_active_presence)
+
+    def _on_active_presence(self, _instance, value):
+        if value is None:
+            return
+
+        if value.status == self._last_status:
+            return
+
+        since = value.timestamp if value.timestamp else \
+            datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        new_entries = list(self.tracked_entries)
+
+        # Close the previous current entry by recording its end time
+        if new_entries and new_entries[0].is_current:
+            entry = new_entries[0]
+            new_entries[0] = PresenceTrackedEntry(
+                status=entry.status,
+                since=entry.since,
+                until=since
+            )
+
+        # Prepend the new current entry
+        new_entries.insert(0, PresenceTrackedEntry(
+            status=value.status,
+            since=since
+        ))
+
+        self.tracked_entries = new_entries
+        self._last_status = value.status
 
 
 class PresencePublisher(Widget):
