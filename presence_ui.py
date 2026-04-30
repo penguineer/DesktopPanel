@@ -1,5 +1,8 @@
 """ Module for presence UI """
 
+import datetime
+
+import dateutil.parser
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import BooleanProperty, ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
@@ -50,6 +53,26 @@ class PresenceColor:
             return PresenceColor.occupied_color_rgba
 
         return None
+
+
+def _format_since(iso_timestamp):
+    """Format an ISO 8601 timestamp as a compact local-time string.
+
+    Returns HH:MM for same-day timestamps, or DD.MM HH:MM for older ones.
+    Returns an empty string if the timestamp cannot be parsed.
+    """
+    if not iso_timestamp:
+        return ""
+    try:
+        dt = dateutil.parser.parse(iso_timestamp)
+        if dt.tzinfo:
+            dt = dt.astimezone(tz=None)
+        now = datetime.datetime.now()
+        if dt.date() == now.date():
+            return dt.strftime("%H:%M")
+        return dt.strftime("%d.%m %H:%M")
+    except (ValueError, TypeError):
+        return ""
 
 
 Builder.load_string("""
@@ -157,7 +180,7 @@ Builder.load_string("""
 #: import HumanizedDurationLabel timewidget.HumanizedDurationLabel
 
 <PresenceHistoryItem>:
-    size: 250, 40
+    size: 250, 56
     size_hint: 1, None
 
     canvas:
@@ -170,34 +193,51 @@ Builder.load_string("""
                 5
 
     BoxLayout:
+        orientation: 'vertical'
         padding: [8, 4]
-        spacing: 8
+        spacing: 2
 
         Label:
-            text: root._status_text
-            font_size: 16
+            text: root._since_text
+            font_size: 11
             font_name: 'assets/FiraMono-Regular.ttf'
             halign: 'left'
             valign: 'center'
             text_size: self.size
             color: root._presence_color
-            size_hint_x: 0.4
+            size_hint_y: 0.4
 
-        HumanizedDurationLabel:
-            id: duration_label
-            font_size: 16
-            font_name: 'assets/FiraMono-Regular.ttf'
-            halign: 'right'
-            valign: 'center'
-            text_size: self.size
-            color: root._presence_color
-            size_hint_x: 0.6
+        BoxLayout:
+            orientation: 'horizontal'
+            spacing: 8
+            size_hint_y: 0.6
+
+            Label:
+                text: root._status_text
+                font_size: 16
+                font_name: 'assets/FiraMono-Regular.ttf'
+                halign: 'left'
+                valign: 'center'
+                text_size: self.size
+                color: root._presence_color
+                size_hint_x: 0.4
+
+            HumanizedDurationLabel:
+                id: duration_label
+                font_size: 16
+                font_name: 'assets/FiraMono-Regular.ttf'
+                halign: 'right'
+                valign: 'center'
+                text_size: self.size
+                color: root._presence_color
+                size_hint_x: 0.6
 """)
 
 
 class PresenceHistoryItem(RelativeLayout):
     _presence_color = ColorProperty(PresenceColor.absent_color_rgba)
     _status_text = StringProperty("")
+    _since_text = StringProperty("")
 
     tracked_entry = ObjectProperty(None, allownone=True)
 
@@ -213,6 +253,7 @@ class PresenceHistoryItem(RelativeLayout):
         if entry is None:
             self._presence_color = PresenceColor.absent_color_rgba
             self._status_text = ""
+            self._since_text = ""
             self.ids.duration_label.update = False
             self.ids.duration_label.iso_instant = None
             self.ids.duration_label.duration_millis = None
@@ -221,6 +262,7 @@ class PresenceHistoryItem(RelativeLayout):
         c = PresenceColor.color_for(entry.status)
         self._presence_color = c if c else PresenceColor.absent_color_rgba
         self._status_text = entry.status.capitalize() if entry.status else ""
+        self._since_text = _format_since(entry.since)
 
         if entry.is_current:
             self.ids.duration_label.update = True
