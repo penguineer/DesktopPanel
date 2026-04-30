@@ -1,7 +1,6 @@
 # Copilot Instructions — DesktopPanel
 
 DesktopPanel is a Python/Kivy application that runs on a Raspberry Pi touchscreen display.
-It shows a tabbed panel with pages for home, system information, and GTD task tracking.
 It integrates with MQTT (sensor data) and AMQP/RabbitMQ (command dispatch).
 
 ---
@@ -38,7 +37,7 @@ The project is **flat** — all Python source modules live in the root directory
 Every module follows this layout:
 
 ```python
-""" Module for <description> """       # one-line module docstring
+""" Module for <description> """ 
 
 # --- stdlib imports ---
 # --- third-party imports (kivy first, then others) ---
@@ -52,8 +51,6 @@ Builder.load_string("""               # KV language definition for the first wid
 class WidgetClass(...):               # Python class immediately follows its KV block
     ...
 ```
-
-Module docstrings are short, single-line, and wrapped in `""" ... """`.
 
 ---
 
