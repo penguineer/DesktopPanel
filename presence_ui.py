@@ -1,12 +1,15 @@
 """ Module for presence UI """
 
+import datetime
+
+import dateutil.parser
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
+from kivy.properties import BooleanProperty, ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
 from kivy.uix.relativelayout import RelativeLayout
 
 from dlg import FullscreenTimedModal
-from presence_conn import PresenceSvcCfg
+from presence_conn import PresenceSvcCfg, PresenceTracker  # noqa: F401 - PresenceTracker used in KV
 
 
 class Contact(object):
@@ -50,6 +53,26 @@ class PresenceColor:
             return PresenceColor.occupied_color_rgba
 
         return None
+
+
+def _format_since(iso_timestamp):
+    """Format an ISO 8601 timestamp as a compact local-time string.
+
+    Returns HH:MM for same-day timestamps, or DD.MM HH:MM for older ones.
+    Returns an empty string if the timestamp cannot be parsed.
+    """
+    if not iso_timestamp:
+        return ""
+    try:
+        dt = dateutil.parser.parse(iso_timestamp)
+        if dt.tzinfo:
+            dt = dt.astimezone(tz=None)
+        now = datetime.datetime.now()
+        if dt.date() == now.date():
+            return dt.strftime("%H:%M")
+        return dt.strftime("%d.%m %H:%M")
+    except (ValueError, TypeError):
+        return ""
 
 
 Builder.load_string("""
@@ -151,6 +174,139 @@ class PresenceListItem(RelativeLayout):
 
         c = PresenceColor.color_for(self._displayed_presence.status) if self._displayed_presence else None
         self._presence_color = c if c else PresenceColor.absent_color_rgba
+
+
+Builder.load_string("""
+#: import HumanizedDurationLabel timewidget.HumanizedDurationLabel
+
+<PresenceHistoryItem>:
+    size: 250, 56
+    size_hint: 1, None
+
+    canvas:
+        Color:
+            rgba: root._presence_color
+        Line:
+            rounded_rectangle:
+                0, 0, \
+                self.size[0], self.size[1], \
+                5
+
+    BoxLayout:
+        orientation: 'vertical'
+        padding: [8, 4]
+        spacing: 2
+
+        Label:
+            text: root._since_text
+            font_size: 11
+            font_name: 'assets/FiraMono-Regular.ttf'
+            halign: 'left'
+            valign: 'center'
+            text_size: self.size
+            color: root._presence_color
+            size_hint_y: 0.4
+
+        BoxLayout:
+            orientation: 'horizontal'
+            spacing: 8
+            size_hint_y: 0.6
+
+            Label:
+                text: root._status_text
+                font_size: 16
+                font_name: 'assets/FiraMono-Regular.ttf'
+                halign: 'left'
+                valign: 'center'
+                text_size: self.size
+                color: root._presence_color
+                size_hint_x: 0.4
+
+            HumanizedDurationLabel:
+                id: duration_label
+                font_size: 16
+                font_name: 'assets/FiraMono-Regular.ttf'
+                halign: 'right'
+                valign: 'center'
+                text_size: self.size
+                color: root._presence_color
+                size_hint_x: 0.6
+""")
+
+
+class PresenceHistoryItem(RelativeLayout):
+    _presence_color = ColorProperty(PresenceColor.absent_color_rgba)
+    _status_text = StringProperty("")
+    _since_text = StringProperty("")
+
+    tracked_entry = ObjectProperty(None, allownone=True)
+
+    def __init__(self, **kwargs):
+        super(PresenceHistoryItem, self).__init__(**kwargs)
+
+        self.bind(tracked_entry=self._on_tracked_entry)
+
+    def _on_tracked_entry(self, _instance, entry):
+        if 'duration_label' not in self.ids:
+            return
+
+        if entry is None:
+            self._presence_color = PresenceColor.absent_color_rgba
+            self._status_text = ""
+            self._since_text = ""
+            self.ids.duration_label.update = False
+            self.ids.duration_label.iso_instant = None
+            self.ids.duration_label.duration_millis = None
+            return
+
+        c = PresenceColor.color_for(entry.status)
+        self._presence_color = c if c else PresenceColor.absent_color_rgba
+        self._status_text = entry.status.capitalize() if entry.status else ""
+        self._since_text = _format_since(entry.since)
+
+        if entry.is_current:
+            self.ids.duration_label.update = True
+            self.ids.duration_label.iso_instant = entry.since
+        else:
+            self.ids.duration_label.update = False
+            self.ids.duration_label.iso_instant = None
+            self.ids.duration_label.duration_millis = entry.duration_ms
+
+
+Builder.load_string("""
+<PresenceHistoryList>:
+    ScrollView:
+        size_hint: 1, 1
+        do_scroll_x: False
+
+        BoxLayout:
+            id: history_box
+            orientation: 'vertical'
+            spacing: 4
+            padding: [0, 4]
+            size_hint_y: None
+            height: self.minimum_height
+""")
+
+
+class PresenceHistoryList(RelativeLayout):
+    tracked_entries = ListProperty()
+
+    def __init__(self, **kwargs):
+        super(PresenceHistoryList, self).__init__(**kwargs)
+
+        self.bind(tracked_entries=self._on_tracked_entries)
+
+    def _on_tracked_entries(self, _instance, entries):
+        if 'history_box' not in self.ids:
+            return
+
+        self.ids.history_box.clear_widgets()
+
+        for entry in entries:
+            item = PresenceHistoryItem()
+            item.tracked_entry = entry
+            self.ids.history_box.add_widget(item)
 
 
 Builder.load_string("""
@@ -489,12 +645,10 @@ Builder.load_string("""
 
         padding: [8, 70 + 20, 8, 8+20]
 
-        PresenceList:
+        PresenceHistoryList:
             size: 350, 400
             size_hint: None, 1
-            presence_list: root.presence_list
-            handle_self: root.handle_self
-            contacts: root.contacts
+            tracked_entries: root.tracked_entries
 """)
 
 
@@ -505,6 +659,7 @@ class PresenceDlg(FullscreenTimedModal):
     handle_self = StringProperty(None, allownone=True)
     contacts = DictProperty()
     presence_list = ListProperty()
+    tracked_entries = ListProperty()
 
     request_callback = ObjectProperty()
 
@@ -517,6 +672,7 @@ Builder.load_string("""
 #:import PingTechPresenceUpdater presence_conn.PingTechPresenceUpdater
 #:import PingTechPresenceReceiver presence_conn.PingTechPresenceReceiver
 #:import PresenceChangeHandler presence_conn.PresenceChangeHandler
+#:import PresenceTracker presence_conn.PresenceTracker
 
 <PresenceTrayWidget>:
     presence_list: presence_receiver.presence_list
@@ -566,6 +722,10 @@ Builder.load_string("""
         active_presence: presence_receiver.active_presence
         retrieval_trigger: root.close_popup
         repost_timeout: 5 #  repost timeout [s] to fix race conditions with multiple clients
+
+    PresenceTracker:
+        id: presence_tracker
+        active_presence: presence_receiver.active_presence
 """)
 
 
@@ -628,6 +788,9 @@ class PresenceTrayWidget(RelativeLayout):
 
             self.pr_sel.presence_list = self.presence_list
             self.bind(presence_list=self.pr_sel.setter('presence_list'))
+
+            self.pr_sel.tracked_entries = self.ids.presence_tracker.tracked_entries
+            self.ids.presence_tracker.bind(tracked_entries=self.pr_sel.setter('tracked_entries'))
 
             self.pr_sel.requested_status = self.ids.change_handler.requested_status
             self.ids.change_handler.bind(requested_status=self.pr_sel.setter('requested_status'))
