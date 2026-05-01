@@ -328,8 +328,12 @@ class SyslogMessagePanel(BoxLayout):
 
     Messages turn grey (acknowledged) automatically after :attr:`acknowledge_after`
     seconds (0 = disabled).  Tapping an entry immediately acknowledges it.
-    Acknowledged messages remain in the list until the MAX_ENTRIES limit
-    is reached — they are never removed by time alone.
+    Acknowledged messages remain in the list until the :attr:`max_entries` limit
+    is reached — they are **never** removed by time alone.
+
+    The maximum number of stored (and displayed) messages is controlled by
+    :attr:`max_entries` (default: 50).  Messages are removed only when a new
+    message would exceed this limit, starting with the oldest entry.
 
     Set :attr:`message_callback` to a callable ``(SyslogMessage) -> None`` to
     be notified of each newly received message (e.g. to update tab notifications
@@ -340,12 +344,11 @@ class SyslogMessagePanel(BoxLayout):
     border_color = ColorProperty(Colors.COLOR_GREY)
     min_priority = StringProperty('error')
     acknowledge_after = NumericProperty(3600)  # seconds; 0 = never auto-acknowledge
+    max_entries = NumericProperty(50)          # maximum number of messages stored
 
     amqp_widget = ObjectProperty(None, allownone=True)
     amqp_queue = StringProperty('')
     message_callback = ObjectProperty(None, allownone=True)
-
-    MAX_ENTRIES = 50
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -399,16 +402,25 @@ class SyslogMessagePanel(BoxLayout):
         """Re-render when the auto-acknowledge timeout changes."""
         self._refresh_entries()
 
+    def on_max_entries(self, _instance, value):
+        """Trim the message store and re-render when the limit is reduced."""
+        if len(self._messages) > value:
+            self._messages = self._messages[:int(value)]
+        self._refresh_entries()
+
     def add_message(self, msg: SyslogMessage):
         """Add a new syslog message to the store and update the display.
 
         Messages are stored regardless of the current filter so that raising
         the minimum priority later can reveal previously received messages.
+        The store is capped at :attr:`max_entries`; the oldest message is
+        dropped when the limit would be exceeded.
         Must be called on the Kivy main thread.
         """
         self._messages.insert(0, msg)
-        if len(self._messages) > self.MAX_ENTRIES:
-            self._messages = self._messages[:self.MAX_ENTRIES]
+        limit = int(self.max_entries)
+        if len(self._messages) > limit:
+            self._messages = self._messages[:limit]
         self._refresh_entries()
 
         if self.message_callback:

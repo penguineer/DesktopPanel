@@ -26,6 +26,7 @@ Builder.load_string("""
             amqp_queue: root.conf.get('syslog_channel', '') if root.conf else ''
             min_priority: root.conf.get('syslog_min_priority', 'error') if root.conf else 'error'
             acknowledge_after: root.conf.get('syslog_acknowledge_after', 3600) if root.conf else 3600
+            max_entries: root.conf.get('syslog_max_entries', 50) if root.conf else 50
             message_callback: root.on_syslog_message
 
         AnchorLayout:
