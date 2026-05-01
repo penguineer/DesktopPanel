@@ -5,7 +5,7 @@ from typing import Optional
 
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ListProperty, ColorProperty
+from kivy.properties import StringProperty, ListProperty, ColorProperty, NumericProperty
 from kivy.uix.boxlayout import BoxLayout
 
 
@@ -134,26 +134,21 @@ Builder.load_string("""
 <SyslogEntry>:
     orientation: 'vertical'
     size_hint: 1, None
-    height: 44
-    padding: [4, 2]
+    height: 72
+    padding: [4, 4]
     spacing: 2
+
+    canvas.before:
+        Color:
+            rgba: (0.12, 0.12, 0.12, 1) if root.entry_index % 2 == 1 else (0, 0, 0, 1)
+        Rectangle:
+            pos: self.pos
+            size: self.size
 
     Label:
         text: root.msg_host + '  ' + root.msg_time + '  ' + root.msg_program + ' (' + root.msg_facility + ')'
         font_size: 10
         font_name: 'assets/FiraMono-Regular.ttf'
-        color: root.meta_color
-        halign: 'left'
-        valign: 'center'
-        text_size: self.size
-        shorten: True
-        shorten_from: 'right'
-        size_hint_y: None
-        height: 18
-
-    Label:
-        text: root.msg_text
-        font_size: 12
         color: root.entry_color
         halign: 'left'
         valign: 'center'
@@ -161,7 +156,17 @@ Builder.load_string("""
         shorten: True
         shorten_from: 'right'
         size_hint_y: None
-        height: 20
+        height: 14
+
+    Label:
+        text: root.msg_text
+        font_size: 12
+        color: root.entry_color
+        halign: 'left'
+        valign: 'top'
+        text_size: self.width, self.height
+        size_hint_y: None
+        height: 48
 
 <SyslogMessagePanel>:
     orientation: 'vertical'
@@ -176,22 +181,16 @@ Builder.load_string("""
                 root.pos[0] + root.size[0] - 2, root.pos[1] + 4, \\ 
                 root.pos[0] + root.size[0] - 2, root.pos[1] + root.size[1] - 4 
 
-    Label:
-        text: 'SYSLOG'
-        size_hint: 1, None
-        size: 0, 24
-        color: root.header_color
-        bold: True
-
     RecycleView:
         id: rv
         data: root.entries
         viewclass: 'SyslogEntry'
         size_hint: 1, 1
+        bar_width: 0
 
         RecycleBoxLayout:
             orientation: 'vertical'
-            default_size: 0, 44
+            default_size: 0, 72
             default_size_hint: 1, None
             size_hint_y: None
             height: self.minimum_height
@@ -205,7 +204,7 @@ class SyslogEntry(BoxLayout):
     msg_program = StringProperty('')
     msg_text = StringProperty('')
     entry_color = ColorProperty(Colors.COLOR_WHITE)
-    meta_color = ColorProperty(Colors.COLOR_GREY)
+    entry_index = NumericProperty(0)
 
 
 class SyslogMessagePanel(BoxLayout):
@@ -218,7 +217,6 @@ class SyslogMessagePanel(BoxLayout):
 
     entries = ListProperty()
     border_color = ColorProperty(Colors.COLOR_GREY)
-    header_color = ColorProperty(Colors.COLOR_GREY)
 
     MAX_ENTRIES = 50
 
@@ -249,6 +247,7 @@ class SyslogMessagePanel(BoxLayout):
         self.entries = [
             {
                 'size_hint': [1, None],
+                'entry_index': i,
                 'msg_time': msg.formatted_time(),
                 'msg_host': msg.host,
                 'msg_facility': msg.facility,
@@ -256,6 +255,6 @@ class SyslogMessagePanel(BoxLayout):
                 'msg_text': msg.message,
                 'entry_color': msg.entry_color(),
             }
-            for msg in self._messages
+            for i, msg in enumerate(self._messages)
         ]
         Clock.schedule_once(lambda dt: self.ids.rv.refresh_from_data())

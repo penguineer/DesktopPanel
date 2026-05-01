@@ -21,12 +21,12 @@ Builder.load_string("""
 
         SyslogMessagePanel:
             id: syslog_panel
-            size_hint_x: 0.35
+            size_hint_x: 0.5  # syslog panel width fraction; adjust here to resize
 
         AnchorLayout:
             anchor_x: 'right'
             anchor_y: 'bottom'
-            size_hint_x: 0.65
+            size_hint_x: 0.5  # complement of syslog panel width above
             padding: [0, 0, 10, 0]
 
             BoxLayout:
