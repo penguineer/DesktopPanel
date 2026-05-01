@@ -80,7 +80,7 @@ class AmqpResourceConfiguration(object):
 
         return AmqpResourceConfiguration(
             declare=declare,
-            command_channel=cfg_amqp.get("command_channel", AmqpResourceConfiguration.COMMAND_CHANNEL_DEFAULT)
+            command_channel=cfg_amqp.get("command_channel", AmqpResourceConfiguration.COMMAND_CHANNEL_DEFAULT),
         )
 
     def __init__(self,
@@ -172,6 +172,8 @@ class AmqpConnector(object):
         self._channel = None
         self._consumer_tag = None
 
+        self._extra_consumers = {}  # queue_name -> pika on_message_callback
+
         self._tray_icon = None
 
     def setup(self):
@@ -181,6 +183,23 @@ class AmqpConnector(object):
         Logger.info("AMQP: Terminating consumer")
         self._terminating = True
         self._disconnect()
+
+    def register_queue_consumer(self, queue_name: str, callback: Callable) -> None:
+        """Register a pika consumer on an additional AMQP queue.
+
+        If the channel is already open the consumer starts immediately.
+        Otherwise it is started automatically once the channel is ready.
+        Registering the same queue_name again replaces the previous callback.
+
+        :param queue_name: AMQP queue to consume from.
+        :param callback: Pika on_message_callback(channel, method, properties, body).
+        """
+        self._extra_consumers[queue_name] = callback
+        if self._channel and not self._terminating:
+            self._start_extra_consumer(queue_name, callback)
+
+    def _start_extra_consumer(self, queue_name: str, callback: Callable) -> None:
+        self._channel.basic_consume(queue=queue_name, on_message_callback=callback)
 
     def update_tray_icon(self, tray_icon=None):
         if tray_icon:
@@ -275,6 +294,10 @@ class AmqpConnector(object):
         Logger.info("AMQP: Starting to consume on queue %s", self._resource_cfg.command_channel())
         self._consumer_tag = self._channel.basic_consume(queue=self._resource_cfg.command_channel(),
                                                          on_message_callback=self._on_command_callback)
+
+        for queue_name, callback in self._extra_consumers.items():
+            self._start_extra_consumer(queue_name, callback)
+
         self.update_tray_icon()
 
     def _on_command_callback(self, channel, method, _properties, body):
@@ -317,6 +340,7 @@ class AmqpWidget(TrayIcon):
     def __init__(self, **kwargs):
         self._connector = None
         self._cmd_dispatch = AmqpCommandDispatch()
+        self._queue_consumers = {}  # queue_name -> pika on_message_callback
 
         super(AmqpWidget, self).__init__(**kwargs)
 
@@ -325,6 +349,20 @@ class AmqpWidget(TrayIcon):
     def add_command_handler(self, command: str, handler: Optional[Callable[[str, dict], None]]) -> None:
         """Register a command handler on the internal dispatcher"""
         self._cmd_dispatch.add_command_handler(command, handler)
+
+    def register_queue_consumer(self, queue_name: str, callback: Callable) -> None:
+        """Register a pika consumer callback for an additional AMQP queue.
+
+        The consumer is started when the AMQP connection is established and
+        re-started automatically whenever the connection is re-established.
+        Registering the same queue_name again replaces the previous callback.
+
+        :param queue_name: AMQP queue to consume from.
+        :param callback: Pika on_message_callback(channel, method, properties, body).
+        """
+        self._queue_consumers[queue_name] = callback
+        if self._connector:
+            self._connector.register_queue_consumer(queue_name, callback)
 
     def _on_conf(self, _instance, conf):
         if self._connector:
@@ -351,6 +389,8 @@ class AmqpWidget(TrayIcon):
                 amqp_resource_cfg=resource_cfg,
                 dispatch=self._cmd_dispatch
             )
+            for queue_name, callback in self._queue_consumers.items():
+                connector.register_queue_consumer(queue_name, callback)
             connector.update_tray_icon(self)
             connector.setup()
             self._connector = connector

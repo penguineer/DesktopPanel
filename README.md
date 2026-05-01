@@ -81,6 +81,61 @@ This may change in future versions.
 * `screenshot` Takes a screenshot and stores in the working directory. This command has no arguments.
 * `presence popup` Toggles the presence dialog. This command has no arguments.
 
+### Syslog Channel
+
+The DesktopPanel can display critical syslog messages on the System page.
+Messages are consumed from the queue defined in `amqp.syslog_channel` (no default; omit the key to disable this feature).
+
+#### Message Format
+
+Messages must originate from **syslog-ng's AMQP destination**.
+All relevant information is carried in the AMQP message **properties headers** — the message body is empty.
+The following headers are used:
+
+| Header | Description |
+|--------|-------------|
+| `DATE` | Original event timestamp (e.g. `Apr 30 19:37:03`) |
+| `FACILITY` | syslog facility (e.g. `auth`, `kern`) |
+| `HOST` / `HOST_FROM` | Originating host name |
+| `MESSAGE` | The log message text |
+| `PRIORITY` | syslog priority string (e.g. `error`, `crit`) |
+| `PROGRAM` | The program that generated the message |
+
+Only messages with `error`/`err` or higher severity (`crit`, `critical`, `alert`, `emerg`, `panic`) are meaningful to display.
+Use syslog-ng filters or RabbitMQ bindings to route only these severities to the DesktopPanel queue.
+
+#### RabbitMQ Setup
+
+A dedicated queue for DesktopPanel syslog display is recommended so that messages can also be consumed by other services independently.
+
+Example RabbitMQ setup (adjust names to your environment):
+
+1. **Exchange**: Use the exchange created by syslog-ng (typically a `topic` exchange, e.g. `syslog`).
+2. **Queue**: Create a durable queue, e.g. `syslog.DesktopPanel`.
+3. **Binding**: Bind the queue to the syslog exchange.
+   If syslog-ng uses the host name as part of the routing key, a wildcard binding such as `#` or `*.error` can be used depending on your routing key scheme.
+4. **Configure DesktopPanel**: Set `amqp.syslog_channel` to the queue name (e.g. `syslog.DesktopPanel`) and optionally set `amqp.declare` to `false` if the queue is managed externally.
+
+Example `desktop-panel-config.json` snippet:
+```json
+"amqp": {
+  "host": "rabbitmq.example.com",
+  "user": "desktop",
+  "passwd": "secret",
+  "declare": "false",
+  "command_channel": "command.DesktopPanel",
+  "syslog_channel": "syslog.DesktopPanel"
+}
+```
+
+#### Notification behaviour
+
+When a new syslog message is received while the System page is **not** active, the System page tab button lights up:
+* **Red / Critical** — for priorities `crit`, `critical`, `alert`, `emerg`, `panic`
+* **Yellow / Warning** — for priorities `error` / `err`
+
+The notification clears automatically when the System page is opened.
+
 ## MQTT
 
 ### Status update

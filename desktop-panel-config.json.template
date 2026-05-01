@@ -40,6 +40,10 @@
       }
   },
   "system": {
+    "syslog_channel": "<AMQP syslog queue name, e.g. syslog.DesktopPanel>",
+    "syslog_min_priority": "<min syslog level to display, e.g. error (default), warning, crit>",
+    "syslog_acknowledge_after": "<integer seconds until messages turn grey, e.g. 3600 (default), 0 to disable>",
+    "syslog_max_entries": "<max number of messages to keep, e.g. 50 (default)>",
     "power": {
         "topic": "<MQTT topic>"
     },

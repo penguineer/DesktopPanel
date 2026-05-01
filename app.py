@@ -115,6 +115,8 @@ class TabbedPanelApp(App):
         self.amqp_widget.add_command_handler("presence popup", self.schedule_popup_presence_dlg)
         ca.status_bar.tray_bar.register_widget(self.amqp_widget)
 
+        system_page.amqp_widget = self.amqp_widget
+
         self.ca = ca
         return ca
 
