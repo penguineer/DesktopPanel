@@ -7,7 +7,7 @@ from typing import Optional
 from kivy import Logger
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ListProperty, ColorProperty, NumericProperty, ObjectProperty
+from kivy.properties import StringProperty, ListProperty, ColorProperty, NumericProperty, ObjectProperty, BooleanProperty
 from kivy.uix.boxlayout import BoxLayout
 
 
@@ -282,6 +282,18 @@ Builder.load_string("""
                 root.pos[0] + root.size[0] - 2, root.pos[1] + 4, \\ 
                 root.pos[0] + root.size[0] - 2, root.pos[1] + root.size[1] - 4 
 
+    # Scroll indicator: grey ▲ when there are entries above the current viewport
+    Label:
+        text: '▲'
+        font_size: 12
+        font_name: 'assets/FiraMono-Regular.ttf'
+        color: 77/256.0, 77/256.0, 76/256.0, 1
+        halign: 'center'
+        valign: 'center'
+        size_hint_y: None
+        height: 14
+        opacity: 1 if root._has_more_above else 0
+
     RecycleView:
         id: rv
         data: root.entries
@@ -295,6 +307,18 @@ Builder.load_string("""
             default_size_hint: 1, None
             size_hint_y: None
             height: self.minimum_height
+
+    # Scroll indicator: grey ▼ when there are entries below the current viewport
+    Label:
+        text: '▼'
+        font_size: 12
+        font_name: 'assets/FiraMono-Regular.ttf'
+        color: 77/256.0, 77/256.0, 76/256.0, 1
+        halign: 'center'
+        valign: 'center'
+        size_hint_y: None
+        height: 14
+        opacity: 1 if root._has_more_below else 0
 """)
 
 
@@ -323,17 +347,19 @@ class SyslogMessagePanel(BoxLayout):
     syslog-specific code is needed in the host page or in ``amqp.py``.
 
     Only messages whose priority is at or above :attr:`min_priority` are shown.
-    Set ``min_priority`` to a standard syslog level name (e.g. ``'error'``,
-    ``'warning'``, ``'info'``) to control which messages appear.
+    Messages that do not pass the filter are **discarded on arrival** so that
+    a flood of low-priority messages can never displace high-priority ones from
+    the list.  Set ``min_priority`` to a standard syslog level name (e.g.
+    ``'error'``, ``'warning'``, ``'info'``) to control which messages appear.
 
     Messages turn grey (acknowledged) automatically after :attr:`acknowledge_after`
     seconds (0 = disabled).  Tapping an entry immediately acknowledges it.
-    Acknowledged messages remain in the list until the :attr:`max_entries` limit
-    is reached — they are **never** removed by time alone.
+    Acknowledged messages remain in the list — they are **never** removed by
+    time alone.
 
-    The maximum number of stored (and displayed) messages is controlled by
-    :attr:`max_entries` (default: 50).  Messages are removed only when a new
-    message would exceed this limit, starting with the oldest entry.
+    The display is capped at :attr:`max_entries` messages (default: 50).
+    Messages are removed only when a new message would exceed this limit,
+    starting with the oldest entry.
 
     Set :attr:`message_callback` to a callable ``(SyslogMessage) -> None`` to
     be notified of each newly received message (e.g. to update tab notifications
@@ -344,11 +370,15 @@ class SyslogMessagePanel(BoxLayout):
     border_color = ColorProperty(Colors.COLOR_GREY)
     min_priority = StringProperty('error')
     acknowledge_after = NumericProperty(3600)  # seconds; 0 = never auto-acknowledge
-    max_entries = NumericProperty(50)          # maximum number of messages stored
+    max_entries = NumericProperty(50)          # maximum number of messages displayed
 
     amqp_widget = ObjectProperty(None, allownone=True)
     amqp_queue = StringProperty('')
     message_callback = ObjectProperty(None, allownone=True)
+
+    # Scroll position indicators (updated after each refresh and on scroll)
+    _has_more_above = BooleanProperty(False)
+    _has_more_below = BooleanProperty(False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -361,6 +391,20 @@ class SyslogMessagePanel(BoxLayout):
     def __del__(self):
         if self._refresh_clock:
             self._refresh_clock.cancel()
+
+    def on_kv_post(self, base_widget):
+        """Bind scroll-position tracking after KV rules are applied."""
+        self.ids.rv.bind(scroll_y=self._on_rv_scroll)
+
+    def _on_rv_scroll(self, rv, scroll_y):
+        """Update the ▲/▼ scroll indicator visibility on every scroll event."""
+        try:
+            content_height = rv.layout_manager.height
+            has_overflow = content_height > rv.height
+        except Exception:
+            has_overflow = False
+        self._has_more_above = has_overflow and scroll_y < 0.999
+        self._has_more_below = has_overflow and scroll_y > 0.001
 
     def on_amqp_widget(self, _instance, _value):
         """Subscribe to the AMQP queue when the widget becomes available."""
@@ -410,14 +454,19 @@ class SyslogMessagePanel(BoxLayout):
         self._refresh_entries()
 
     def add_message(self, msg: SyslogMessage):
-        """Add a new syslog message to the store and update the display.
+        """Add a new syslog message to the internal buffer and update the display.
 
-        Messages are stored regardless of the current filter so that raising
-        the minimum priority later can reveal previously received messages.
-        The store is capped at :attr:`max_entries`; the oldest message is
+        Messages that do not pass the current :attr:`min_priority` filter are
+        discarded immediately so that high-priority messages are never displaced
+        from the visible list by a flood of low-priority ones.
+
+        The buffer is capped at :attr:`max_entries`; the oldest message is
         dropped when the limit would be exceeded.
+
         Must be called on the Kivy main thread.
         """
+        if not _passes_filter(msg.priority, self.min_priority):
+            return
         self._messages.insert(0, msg)
         limit = int(self.max_entries)
         if len(self._messages) > limit:
@@ -456,6 +505,11 @@ class SyslogMessagePanel(BoxLayout):
                 'tap_callback': functools.partial(self._acknowledge_message, msg),
             }
             for msg in self._messages
-            if _passes_filter(msg.priority, self.min_priority)
         ]
-        Clock.schedule_once(lambda dt: self.ids.rv.refresh_from_data())
+        Clock.schedule_once(lambda dt: self._do_post_refresh())
+
+    def _do_post_refresh(self):
+        """Refresh the RecycleView data and update scroll indicators."""
+        rv = self.ids.rv
+        rv.refresh_from_data()
+        self._on_rv_scroll(rv, rv.scroll_y)
