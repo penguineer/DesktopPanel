@@ -23,6 +23,7 @@ Builder.load_string("""
             id: syslog_panel
             size_hint_x: 0.5  # syslog panel width fraction; adjust here to resize
             min_priority: root.conf.get('syslog_min_priority', 'error') if root.conf else 'error'
+            acknowledge_after: root.conf.get('syslog_acknowledge_after', 3600) if root.conf else 3600
 
         AnchorLayout:
             anchor_x: 'right'

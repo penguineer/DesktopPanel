@@ -227,6 +227,51 @@ class TestPassesFilter:
         assert _passes_filter('not_a_level', 'not_a_level')
 
 
+class TestSyslogMessageAcknowledge:
+    def _make(self, priority='error'):
+        return SyslogMessage(
+            priority=priority, facility='auth', host='host',
+            program='prog', message='msg', date_str='',
+        )
+
+    def test_not_acknowledged_by_default(self):
+        msg = self._make()
+        assert not msg.is_acknowledged
+
+    def test_acknowledge_sets_flag(self):
+        msg = self._make()
+        msg.acknowledge()
+        assert msg.is_acknowledged
+
+    def test_acknowledge_is_idempotent(self):
+        msg = self._make()
+        msg.acknowledge()
+        msg.acknowledge()
+        assert msg.is_acknowledged
+
+    def test_display_color_unacknowledged_critical(self):
+        msg = self._make(priority='crit')
+        assert msg.display_color() == Colors.COLOR_RED
+
+    def test_display_color_unacknowledged_error(self):
+        msg = self._make(priority='error')
+        assert msg.display_color() == Colors.COLOR_YELLOW
+
+    def test_display_color_unacknowledged_info(self):
+        msg = self._make(priority='info')
+        assert msg.display_color() == Colors.COLOR_WHITE
+
+    def test_display_color_acknowledged_is_grey(self):
+        msg = self._make(priority='crit')
+        msg.acknowledge()
+        assert msg.display_color() == Colors.COLOR_GREY
+
+    def test_display_color_acknowledged_error_is_grey(self):
+        msg = self._make(priority='error')
+        msg.acknowledge()
+        assert msg.display_color() == Colors.COLOR_GREY
+
+
 class TestAmqpResourceConfigSyslog:
     """Integration tests for syslog_channel in AmqpResourceConfiguration."""
 

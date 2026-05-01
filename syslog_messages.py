@@ -5,7 +5,7 @@ from typing import Optional
 
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ListProperty, ColorProperty, NumericProperty
+from kivy.properties import StringProperty, ListProperty, ColorProperty, NumericProperty, ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
 
 
@@ -122,6 +122,7 @@ class SyslogMessage(object):
         self._message = message
         self._date_str = date_str
         self._received_at = datetime.datetime.now()
+        self._acknowledged = False
 
     @property
     def priority(self):
@@ -157,6 +158,15 @@ class SyslogMessage(object):
         """True if the syslog priority is critical severity or higher."""
         return self._priority in _SEVERITY_CRITICAL
 
+    def acknowledge(self):
+        """Mark the message as acknowledged; it will be displayed in grey."""
+        self._acknowledged = True
+
+    @property
+    def is_acknowledged(self):
+        """True once the message has been acknowledged (manually or by timeout)."""
+        return self._acknowledged
+
     def entry_color(self):
         """Return the RGBA display color reflecting severity.
 
@@ -168,6 +178,16 @@ class SyslogMessage(object):
         if self._priority in ('error', 'err'):
             return Colors.COLOR_YELLOW
         return Colors.COLOR_WHITE
+
+    def display_color(self):
+        """Return the color to use for rendering this entry.
+
+        Returns grey when the message has been acknowledged; otherwise
+        delegates to :meth:`entry_color`.
+        """
+        if self._acknowledged:
+            return Colors.COLOR_GREY
+        return self.entry_color()
 
     def formatted_time(self):
         """Return a formatted time string for display.
@@ -284,6 +304,13 @@ class SyslogEntry(BoxLayout):
     msg_text = StringProperty('')
     msg_text_height = NumericProperty(_ENTRY_LINE_HEIGHT)
     entry_color = ColorProperty(Colors.COLOR_WHITE)
+    tap_callback = ObjectProperty(None, allownone=True)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos) and self.tap_callback:
+            self.tap_callback()
+            return True
+        return super().on_touch_down(touch)
 
 
 class SyslogMessagePanel(BoxLayout):
@@ -296,11 +323,17 @@ class SyslogMessagePanel(BoxLayout):
     Only messages whose priority is at or above :attr:`min_priority` are shown.
     Set ``min_priority`` to a standard syslog level name (e.g. ``'error'``,
     ``'warning'``, ``'info'``) to control which messages appear.
+
+    Messages turn grey (acknowledged) automatically after :attr:`acknowledge_after`
+    seconds (0 = disabled).  Tapping an entry immediately acknowledges it.
+    Acknowledged messages remain in the list until the MAX_ENTRIES limit
+    is reached — they are never removed by time alone.
     """
 
     entries = ListProperty()
     border_color = ColorProperty(Colors.COLOR_GREY)
     min_priority = StringProperty('error')
+    acknowledge_after = NumericProperty(3600)  # seconds; 0 = never auto-acknowledge
 
     MAX_ENTRIES = 50
 
@@ -320,6 +353,10 @@ class SyslogMessagePanel(BoxLayout):
         """Re-render when the severity filter changes."""
         self._refresh_entries()
 
+    def on_acknowledge_after(self, _instance, _value):
+        """Re-render when the auto-acknowledge timeout changes."""
+        self._refresh_entries()
+
     def add_message(self, msg: SyslogMessage):
         """Add a new syslog message to the store and update the display.
 
@@ -332,8 +369,21 @@ class SyslogMessagePanel(BoxLayout):
             self._messages = self._messages[:self.MAX_ENTRIES]
         self._refresh_entries()
 
+    def _acknowledge_message(self, msg: SyslogMessage):
+        """Acknowledge a message and refresh the display."""
+        msg.acknowledge()
+        self._refresh_entries()
+
     def _refresh_entries(self):
         """Rebuild the RecycleView data list from stored messages."""
+        if self.acknowledge_after > 0:
+            cutoff = datetime.datetime.now() - datetime.timedelta(
+                seconds=self.acknowledge_after
+            )
+            for msg in self._messages:
+                if msg.received_at < cutoff:
+                    msg.acknowledge()
+
         self.entries = [
             {
                 'size_hint': [1, None],
@@ -344,7 +394,8 @@ class SyslogMessagePanel(BoxLayout):
                 'msg_program': msg.program,
                 'msg_text': msg.message,
                 'msg_text_height': _msg_lines(msg.message) * _ENTRY_LINE_HEIGHT,
-                'entry_color': msg.entry_color(),
+                'entry_color': msg.display_color(),
+                'tap_callback': (lambda m: lambda: self._acknowledge_message(m))(msg),
             }
             for msg in self._messages
             if _passes_filter(msg.priority, self.min_priority)
