@@ -164,7 +164,7 @@ Builder.load_string("""
         color: root.entry_color
         halign: 'left'
         valign: 'top'
-        text_size: self.width, self.height
+        text_size: [self.width, self.height]
         size_hint_y: None
         height: 48
 
