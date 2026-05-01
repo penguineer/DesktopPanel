@@ -209,14 +209,14 @@ Builder.load_string("""
     orientation: 'vertical'
     size_hint: 1, None
     height: _ENTRY_MIN_HEIGHT
-    padding: [4, 0, 4, 4]  # top=0: flush list; bottom=4: space after divider line
+    padding: [8, 0, 8, 4]  # top=0: flush list; bottom=4: space after divider line
     spacing: 2
 
     canvas.after:
         Color:
             rgba: 77/256.0, 77/256.0, 76/256.0, 1
         Line:
-            points: self.pos[0], self.pos[1], self.pos[0] + self.size[0], self.pos[1]
+            points: self.pos[0]+4, self.pos[1], self.pos[0] + self.size[0]-4, self.pos[1]
 
     BoxLayout:
         orientation: 'horizontal'
@@ -280,7 +280,7 @@ Builder.load_string("""
         Line:
             points: 
                 root.pos[0] + root.size[0] - 2, root.pos[1] + 4, \\ 
-                root.pos[0] + root.size[0] - 2, root.pos[1] + root.size[1] - 4 
+                root.pos[0] + root.size[0] - 2, root.pos[1] + root.size[1] - 12
 
     # FloatLayout lets the scroll indicators float over the list without
     # consuming any vertical space of their own.
