@@ -7,6 +7,7 @@ import pytest
 from syslog_messages import (SyslogMessage, Colors,
                              _msg_lines, _entry_height,
                              _ENTRY_CHARS_PER_LINE, _ENTRY_LINE_HEIGHT,
+                             _ENTRY_MIN_HEIGHT,
                              _ENTRY_META_HEIGHT, _ENTRY_SPACING, _ENTRY_PADDING_V)
 
 
@@ -163,7 +164,7 @@ class TestEntryHeightHelpers:
         assert _msg_lines('x' * (_ENTRY_CHARS_PER_LINE * 10)) == 3
 
     def test_entry_height_one_line(self):
-        expected = 2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + _ENTRY_LINE_HEIGHT
+        expected = _ENTRY_MIN_HEIGHT
         assert _entry_height('short') == expected
 
     def test_entry_height_three_lines(self):

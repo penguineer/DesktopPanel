@@ -25,6 +25,10 @@ _ENTRY_SPACING = 2        # vertical spacing between metadata and message
 _ENTRY_LINE_HEIGHT = 16   # height per wrapped message line (12 pt font)
 _ENTRY_CHARS_PER_LINE = 50  # rough estimate for word-wrap at ~50 % panel width
 
+# Minimum (1-line message) entry height — used as default in KV
+_ENTRY_MIN_HEIGHT = (2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT
+                     + _ENTRY_SPACING + _ENTRY_LINE_HEIGHT)
+
 
 def _msg_lines(text):
     """Estimate wrapped line count for a message, capped at 3."""
@@ -151,10 +155,12 @@ class SyslogMessage(object):
 
 
 Builder.load_string("""
+#:import _ENTRY_MIN_HEIGHT syslog_messages._ENTRY_MIN_HEIGHT
+#:import _ENTRY_LINE_HEIGHT syslog_messages._ENTRY_LINE_HEIGHT
 <SyslogEntry>:
     orientation: 'vertical'
     size_hint: 1, None
-    height: 40
+    height: _ENTRY_MIN_HEIGHT
     padding: [4, 4]
     spacing: 2
 
@@ -238,7 +244,7 @@ Builder.load_string("""
 
         RecycleBoxLayout:
             orientation: 'vertical'
-            default_size: 0, 40
+            default_size: 0, _ENTRY_MIN_HEIGHT
             default_size_hint: 1, None
             size_hint_y: None
             height: self.minimum_height
