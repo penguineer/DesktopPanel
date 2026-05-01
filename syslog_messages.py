@@ -375,7 +375,13 @@ class SyslogMessagePanel(BoxLayout):
             )
 
     def _on_amqp_message(self, channel, method, properties, _body):
-        """Raw pika consumer callback — parses the message and dispatches to the UI thread."""
+        """Raw pika consumer callback — parses the message and dispatches to the UI thread.
+
+        :param channel: Pika channel used to ACK the delivery.
+        :param method: pika Basic.Deliver frame; routing_key is used as host fallback.
+        :param properties: pika BasicProperties; syslog-ng places message data in headers.
+        :param _body: Message body (empty for syslog-ng AMQP messages; unused).
+        """
         try:
             msg = SyslogMessage.from_amqp(method, properties)
             if msg:

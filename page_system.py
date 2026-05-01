@@ -26,7 +26,7 @@ Builder.load_string("""
             amqp_queue: root.conf.get('syslog_channel', '') if root.conf else ''
             min_priority: root.conf.get('syslog_min_priority', 'error') if root.conf else 'error'
             acknowledge_after: root.conf.get('syslog_acknowledge_after', 3600) if root.conf else 3600
-            message_callback: root._on_syslog_message
+            message_callback: root.on_syslog_message
 
         AnchorLayout:
             anchor_x: 'right'
@@ -56,7 +56,7 @@ Builder.load_string("""
 class SystemPage(globalcontent.ContentPage):
     amqp_widget = ObjectProperty(None, allownone=True)
 
-    def _on_syslog_message(self, msg):
+    def on_syslog_message(self, msg):
         """Update the tab notification badge when a new syslog message arrives."""
         if not self.active:
             if msg.is_critical():
