@@ -2,6 +2,7 @@
 
 from contextlib import nullcontext
 
+from kivy import Logger
 from kivy.clock import Clock
 from kivy.properties import BoundedNumericProperty, DictProperty, BooleanProperty, ObjectProperty
 from kivy.uix.widget import Widget
@@ -82,11 +83,16 @@ class BacklightControl(Widget):
     def _setup(self):
         bt = detect_board_type()
         # This allows us to fake a Raspberry Pi
-        if bt is None:
-            self.ctx = FakeBacklightSysfs()
-            self.ctx.__enter__()
-            self._backlight = Backlight(backlight_sysfs_path=self.ctx.path)
-        else:
-            self.ctx = nullcontext()
-            self.ctx.__enter__()
-            self._backlight = Backlight()
+        try:
+            if bt is None:
+                self.ctx = FakeBacklightSysfs()
+                self.ctx.__enter__()
+                self._backlight = Backlight(backlight_sysfs_path=self.ctx.path)
+            else:
+                self.ctx = nullcontext()
+                self.ctx.__enter__()
+                self._backlight = Backlight()
+        except PermissionError as e:
+            Logger.error("Backlight: Permission denied when accessing backlight settings: %s", e)
+            Logger.warning("Backlight: Backlight control is disabled. "
+                           "Check udev rules for backlight permissions.")
