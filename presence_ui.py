@@ -726,6 +726,7 @@ Builder.load_string("""
     PresenceTracker:
         id: presence_tracker
         active_presence: presence_receiver.active_presence
+        requested_status: change_handler.requested_status
 """)
 
 

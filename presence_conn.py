@@ -94,19 +94,46 @@ class PresenceTracker(Widget):
 
     When the service does not deliver past entries, this widget caches
     entries locally from application launch.
+
+    A new entry is created whenever the status changes. Repeated polling that
+    delivers the same status does not create duplicate entries. However, when
+    the user explicitly requests a presence (even the same one), a new entry is
+    always created so that workflow breaks can be recorded. Wire
+    ``requested_status`` to ``PresenceChangeHandler.requested_status`` to enable
+    this behaviour.
     """
 
     active_presence = ObjectProperty(None, allownone=True)
     tracked_entries = ListProperty()
+    requested_status = StringProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         super(PresenceTracker, self).__init__(**kwargs)
 
+        self._last_status = None
+        self._force_next_status = None
         self.bind(active_presence=self._on_active_presence)
+
+    def on_requested_status(self, _instance, value):
+        """Latch an explicit user request so that the guard can be bypassed."""
+        if value is not None:
+            self._force_next_status = value
 
     def _on_active_presence(self, _instance, value):
         if value is None:
             return
+
+        # Determine whether this update is the result of an explicit user
+        # selection (same or different status) rather than a polling refresh.
+        is_explicit = (self._force_next_status is not None
+                       and self._force_next_status == value.status)
+
+        # Skip polling-triggered dispatches that carry the same status.
+        if value.status == self._last_status and not is_explicit:
+            return
+
+        if is_explicit:
+            self._force_next_status = None
 
         since = value.timestamp if value.timestamp else \
             datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -129,6 +156,7 @@ class PresenceTracker(Widget):
         ))
 
         self.tracked_entries = new_entries
+        self._last_status = value.status
 
 
 class PresencePublisher(Widget):

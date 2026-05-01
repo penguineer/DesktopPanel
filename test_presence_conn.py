@@ -57,6 +57,8 @@ class TestPresenceTracker:
     def test_initial_state(self):
         tracker = _PresenceTrackerLogic()
         assert tracker.tracked_entries == []
+        assert tracker._last_status is None
+        assert tracker._force_next_status is None
 
     def test_first_presence(self):
         tracker = _PresenceTrackerLogic()
@@ -69,11 +71,24 @@ class TestPresenceTracker:
         assert entry.since == "2024-01-01T10:00:00+00:00"
         assert entry.is_current is True
 
-    def test_same_status_creates_new_entry(self):
+    def test_same_status_polling_not_duplicated(self):
+        """Polling refreshes with the same status must not create duplicate entries."""
         tracker = _PresenceTrackerLogic()
         p1 = self._make_presence("present", "2024-01-01T10:00:00+00:00")
         p2 = self._make_presence("present", "2024-01-01T10:05:00+00:00")
         tracker.update(p1)
+        tracker.update(p2)  # no explicit request → treated as polling refresh
+
+        assert len(tracker.tracked_entries) == 1
+
+    def test_same_status_creates_new_entry_when_requested(self):
+        """Explicit user selection of the same status must create a new entry."""
+        tracker = _PresenceTrackerLogic()
+        p1 = self._make_presence("present", "2024-01-01T10:00:00+00:00")
+        tracker.update(p1)
+
+        tracker.set_requested("present")  # user clicked "present" again
+        p2 = self._make_presence("present", "2024-01-01T10:05:00+00:00")
         tracker.update(p2)
 
         assert len(tracker.tracked_entries) == 2
@@ -82,6 +97,19 @@ class TestPresenceTracker:
         assert tracker.tracked_entries[1].status == "present"
         assert tracker.tracked_entries[1].is_current is False
         assert tracker.tracked_entries[1].until == "2024-01-01T10:05:00+00:00"
+
+    def test_latch_consumed_after_one_use(self):
+        """After the explicit request creates a new entry, the next polling update
+        with the same status must not create yet another entry."""
+        tracker = _PresenceTrackerLogic()
+        tracker.update(self._make_presence("present", "2024-01-01T10:00:00+00:00"))
+
+        tracker.set_requested("present")
+        tracker.update(self._make_presence("present", "2024-01-01T10:05:00+00:00"))
+        # second update simulates a subsequent polling refresh — no extra entry
+        tracker.update(self._make_presence("present", "2024-01-01T10:10:00+00:00"))
+
+        assert len(tracker.tracked_entries) == 2
 
     def test_status_change_closes_previous(self):
         tracker = _PresenceTrackerLogic()
@@ -135,16 +163,30 @@ class TestPresenceTracker:
 
 
 class _PresenceTrackerLogic:
-    """Pure-Python stub that reproduces PresenceTracker._on_active_presence logic
-    (the method of PresenceTracker that reacts to presence changes) without
-    requiring Kivy's event loop."""
+    """Pure-Python stub that reproduces PresenceTracker logic without Kivy."""
 
     def __init__(self):
         self.tracked_entries = []
+        self._last_status = None
+        self._force_next_status = None
+
+    def set_requested(self, status):
+        """Simulate setting requested_status (latches force flag like on_requested_status)."""
+        if status is not None:
+            self._force_next_status = status
 
     def update(self, value):
         if value is None:
             return
+
+        is_explicit = (self._force_next_status is not None
+                       and self._force_next_status == value.status)
+
+        if value.status == self._last_status and not is_explicit:
+            return
+
+        if is_explicit:
+            self._force_next_status = None
 
         since = value.timestamp if value.timestamp else \
             datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -165,3 +207,4 @@ class _PresenceTrackerLogic:
         ))
 
         self.tracked_entries = new_entries
+        self._last_status = value.status
