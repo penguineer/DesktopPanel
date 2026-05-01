@@ -1,6 +1,7 @@
 """ Module for syslog message display """
 
 import datetime
+import functools
 from typing import Optional
 
 from kivy.clock import Clock
@@ -395,7 +396,7 @@ class SyslogMessagePanel(BoxLayout):
                 'msg_text': msg.message,
                 'msg_text_height': _msg_lines(msg.message) * _ENTRY_LINE_HEIGHT,
                 'entry_color': msg.display_color(),
-                'tap_callback': (lambda m: lambda: self._acknowledge_message(m))(msg),
+                'tap_callback': functools.partial(self._acknowledge_message, msg),
             }
             for msg in self._messages
             if _passes_filter(msg.priority, self.min_priority)
