@@ -11,7 +11,8 @@
     "user": "<AMQP User>",
     "passwd": "<AMQP Password>",
     "declare": "true | false",
-    "command_channel": "<AMQP command channel>"
+    "command_channel": "<AMQP command channel>",
+    "syslog_channel": "<AMQP syslog queue name, e.g. syslog.DesktopPanel>"
   },
   "presence": {
     "svc": "<service url>",

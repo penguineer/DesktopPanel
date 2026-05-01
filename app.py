@@ -113,6 +113,7 @@ class TabbedPanelApp(App):
         self.amqp_widget.add_command_handler("test", command_log)
         self.amqp_widget.add_command_handler("screenshot", command_screenshot)
         self.amqp_widget.add_command_handler("presence popup", self.schedule_popup_presence_dlg)
+        self.amqp_widget.set_syslog_callback(system_page.on_syslog_message)
         ca.status_bar.tray_bar.register_widget(self.amqp_widget)
 
         self.ca = ca
