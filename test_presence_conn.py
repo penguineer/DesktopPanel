@@ -80,6 +80,7 @@ class TestPresenceTracker:
         assert tracker.tracked_entries[0].status == "present"
         assert tracker.tracked_entries[0].is_current is True
         assert tracker.tracked_entries[1].status == "present"
+        assert tracker.tracked_entries[1].is_current is False
         assert tracker.tracked_entries[1].until == "2024-01-01T10:05:00+00:00"
 
     def test_status_change_closes_previous(self):
