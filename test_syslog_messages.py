@@ -108,15 +108,13 @@ class TestSyslogMessageSeverity:
         assert msg.entry_color() == Colors.COLOR_YELLOW
 
     def test_entry_color_info(self):
-        # Non-error / non-critical priorities use grey (defensive; these
-        # should be filtered out at the RabbitMQ level before reaching
-        # DesktopPanel).
+        # Non-error / non-critical priorities display in white (standard text colour).
         msg = self._make('info')
-        assert msg.entry_color() == Colors.COLOR_GREY
+        assert msg.entry_color() == Colors.COLOR_WHITE
 
 
-class TestSyslogMessageHumanizedAge:
-    def _make_with_age(self, seconds):
+class TestSyslogMessageFormattedTime:
+    def _make_with_offset(self, days=0, seconds=0):
         msg = SyslogMessage(
             priority='error',
             facility='auth',
@@ -125,28 +123,24 @@ class TestSyslogMessageHumanizedAge:
             message='msg',
             date_str='',
         )
-        msg._received_at = datetime.datetime.now() - datetime.timedelta(seconds=seconds)
+        msg._received_at = datetime.datetime.now() - datetime.timedelta(days=days, seconds=seconds)
         return msg
 
-    def test_seconds(self):
-        msg = self._make_with_age(30)
-        age = msg.humanized_age()
-        assert age.endswith('s ago')
+    def test_today_shows_time_only(self):
+        msg = self._make_with_offset(seconds=30)
+        result = msg.formatted_time()
+        # Expected format: HH:MM
+        assert len(result) == 5
+        assert result[2] == ':'
 
-    def test_minutes(self):
-        msg = self._make_with_age(90)
-        age = msg.humanized_age()
-        assert age.endswith('m ago')
-
-    def test_hours(self):
-        msg = self._make_with_age(7200)
-        age = msg.humanized_age()
-        assert age.endswith('h ago')
-
-    def test_days(self):
-        msg = self._make_with_age(90000)
-        age = msg.humanized_age()
-        assert age.endswith('d ago')
+    def test_yesterday_shows_date_and_time(self):
+        msg = self._make_with_offset(days=1)
+        result = msg.formatted_time()
+        # Expected format: DD.MM HH:MM
+        assert len(result) == 11
+        assert result[2] == '.'
+        assert result[5] == ' '
+        assert result[8] == ':'
 
 
 class TestAmqpResourceConfigSyslog:

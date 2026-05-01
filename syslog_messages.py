@@ -10,6 +10,7 @@ from kivy.uix.boxlayout import BoxLayout
 
 
 class Colors:
+    COLOR_WHITE = [1, 1, 1, 1]
     COLOR_GREY = [77 / 256, 77 / 256, 76 / 256, 1]
     COLOR_YELLOW = [249 / 256, 176 / 256, 0 / 256, 1]
     COLOR_RED = [228 / 256, 5 / 256, 41 / 256, 1]
@@ -110,111 +111,70 @@ class SyslogMessage(object):
         """Return the RGBA display color reflecting severity.
 
         Returns red for critical-or-higher priorities, yellow for error-level,
-        and grey for anything else (which should not normally appear if the
-        RabbitMQ queue is filtered correctly).
+        and white for anything else.
         """
         if self.is_critical():
             return Colors.COLOR_RED
         if self._priority in ('error', 'err'):
             return Colors.COLOR_YELLOW
-        return Colors.COLOR_GREY
+        return Colors.COLOR_WHITE
 
-    def humanized_age(self):
-        """Return a human-readable age string relative to when the message was received."""
-        delta = datetime.datetime.now() - self._received_at
-        seconds = int(delta.total_seconds())
-        if seconds < 60:
-            return f"{seconds}s ago"
-        elif seconds < 3600:
-            return f"{seconds // 60}m ago"
-        elif seconds < 86400:
-            return f"{seconds // 3600}h ago"
-        else:
-            return f"{seconds // 86400}d ago"
+    def formatted_time(self):
+        """Return a formatted time string for display.
+
+        Returns HH:MM for messages received today, or DD.MM HH:MM for older ones.
+        """
+        now = datetime.datetime.now()
+        if self._received_at.date() == now.date():
+            return self._received_at.strftime("%H:%M")
+        return self._received_at.strftime("%d.%m %H:%M")
 
 
 Builder.load_string("""
 <SyslogEntry>:
-    orientation: 'horizontal'
+    orientation: 'vertical'
     size_hint: 1, None
-    height: 40
-    spacing: 4
+    height: 44
     padding: [4, 2]
+    spacing: 2
 
-    canvas.before:
-        Color:
-            rgba: root.entry_color[0], root.entry_color[1], root.entry_color[2], 0.08
-        Rectangle:
-            pos: self.pos
-            size: self.size
+    Label:
+        text: root.msg_host + '  ' + root.msg_time + '  ' + root.msg_program + ' (' + root.msg_facility + ')'
+        font_size: 10
+        font_name: 'assets/FiraMono-Regular.ttf'
+        color: root.meta_color
+        halign: 'left'
+        valign: 'center'
+        text_size: self.size
+        shorten: True
+        shorten_from: 'right'
+        size_hint_y: None
+        height: 18
 
-    BoxLayout:
-        orientation: 'vertical'
-        size_hint_x: None
-        width: 90
-        spacing: 1
-
-        Label:
-            text: root.msg_host
-            font_size: 11
-            font_name: 'assets/FiraMono-Regular.ttf'
-            color: root.entry_color
-            halign: 'left'
-            valign: 'center'
-            text_size: self.size
-            shorten: True
-            shorten_from: 'right'
-
-        Label:
-            text: root.msg_time
-            font_size: 10
-            font_name: 'assets/FiraMono-Regular.ttf'
-            color: root.entry_color
-            halign: 'left'
-            valign: 'center'
-            text_size: self.size
-
-    BoxLayout:
-        orientation: 'vertical'
-        spacing: 1
-
-        Label:
-            text: root.msg_program + ' (' + root.msg_facility + ')'
-            font_size: 10
-            bold: True
-            color: root.entry_color
-            halign: 'left'
-            valign: 'center'
-            text_size: self.size
-            shorten: True
-            shorten_from: 'right'
-
-        Label:
-            text: root.msg_text
-            font_size: 10
-            color: root.entry_color
-            halign: 'left'
-            valign: 'center'
-            text_size: self.size
-            shorten: True
-            shorten_from: 'right'
+    Label:
+        text: root.msg_text
+        font_size: 12
+        color: root.entry_color
+        halign: 'left'
+        valign: 'center'
+        text_size: self.size
+        shorten: True
+        shorten_from: 'right'
+        size_hint_y: None
+        height: 20
 
 <SyslogMessagePanel>:
     orientation: 'vertical'
-    padding: 4
-    spacing: 4
+    padding: [4, 4, 8, 4]
+    spacing: 2
 
     canvas.before:
         Color:
             rgba: root.border_color
         Line:
-            rounded_rectangle: self.pos[0]+2, self.pos[1]+2, self.size[0]-4, self.size[1]-4, 5, 100
-        Line:
             points: 
-                root.pos[0] + 6, \\ 
-                root.pos[1] + root.size[1] - 24 - 4, \\ 
-                root.pos[0] + root.size[0] - 6, \\ 
-                root.pos[1] + root.size[1] - 24 - 4 
+                root.pos[0] + root.size[0] - 2, root.pos[1] + 4, \\ 
+                root.pos[0] + root.size[0] - 2, root.pos[1] + root.size[1] - 4 
 
     Label:
         text: 'SYSLOG'
@@ -231,7 +191,7 @@ Builder.load_string("""
 
         RecycleBoxLayout:
             orientation: 'vertical'
-            default_size: 0, 40
+            default_size: 0, 44
             default_size_hint: 1, None
             size_hint_y: None
             height: self.minimum_height
@@ -244,7 +204,8 @@ class SyslogEntry(BoxLayout):
     msg_facility = StringProperty('')
     msg_program = StringProperty('')
     msg_text = StringProperty('')
-    entry_color = ColorProperty(Colors.COLOR_RED)
+    entry_color = ColorProperty(Colors.COLOR_WHITE)
+    meta_color = ColorProperty(Colors.COLOR_GREY)
 
 
 class SyslogMessagePanel(BoxLayout):
@@ -256,8 +217,8 @@ class SyslogMessagePanel(BoxLayout):
     """
 
     entries = ListProperty()
-    border_color = ColorProperty(Colors.COLOR_RED)
-    header_color = ColorProperty(Colors.COLOR_RED)
+    border_color = ColorProperty(Colors.COLOR_GREY)
+    header_color = ColorProperty(Colors.COLOR_GREY)
 
     MAX_ENTRIES = 50
 
@@ -288,7 +249,7 @@ class SyslogMessagePanel(BoxLayout):
         self.entries = [
             {
                 'size_hint': [1, None],
-                'msg_time': msg.humanized_age(),
+                'msg_time': msg.formatted_time(),
                 'msg_host': msg.host,
                 'msg_facility': msg.facility,
                 'msg_program': msg.program,
