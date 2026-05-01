@@ -168,7 +168,7 @@ class TestEntryHeightHelpers:
         assert _entry_height('short') == expected
 
     def test_entry_height_three_lines(self):
-        expected = 2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + 3 * _ENTRY_LINE_HEIGHT
+        expected = _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + 3 * _ENTRY_LINE_HEIGHT
         assert _entry_height('x' * (_ENTRY_CHARS_PER_LINE * 10)) == expected
 
 

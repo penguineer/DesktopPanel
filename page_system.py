@@ -17,7 +17,7 @@ Builder.load_string("""
     BoxLayout:
         orientation: 'horizontal'
         spacing: 10
-        padding: [10, 10]
+        padding: [0, 0, 10, 10]
 
         SyslogMessagePanel:
             id: syslog_panel

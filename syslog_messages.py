@@ -47,14 +47,14 @@ def _passes_filter(priority, min_priority):
 
 
 # Entry layout metrics (used to compute per-entry heights)
-_ENTRY_PADDING_V = 0      # top and bottom padding inside each entry
+_ENTRY_PADDING_V = 4      # total vertical padding per entry (top=0, bottom=4)
 _ENTRY_META_HEIGHT = 14   # height of the single metadata row
 _ENTRY_SPACING = 2        # vertical spacing between metadata and message
 _ENTRY_LINE_HEIGHT = 16   # height per wrapped message line (12 pt font)
 _ENTRY_CHARS_PER_LINE = 50  # rough estimate for word-wrap at ~50 % panel width
 
 # Minimum (1-line message) entry height — used as default in KV
-_ENTRY_MIN_HEIGHT = (2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT
+_ENTRY_MIN_HEIGHT = (_ENTRY_PADDING_V + _ENTRY_META_HEIGHT
                      + _ENTRY_SPACING + _ENTRY_LINE_HEIGHT)
 
 
@@ -67,7 +67,7 @@ def _msg_lines(text):
 
 def _entry_height(text):
     """Total pixel height for an entry given its message text."""
-    return (2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT
+    return (_ENTRY_PADDING_V + _ENTRY_META_HEIGHT
             + _ENTRY_SPACING + _msg_lines(text) * _ENTRY_LINE_HEIGHT)
 
 
@@ -209,7 +209,7 @@ Builder.load_string("""
     orientation: 'vertical'
     size_hint: 1, None
     height: _ENTRY_MIN_HEIGHT
-    padding: [4, 0, 4, 0]  # no top/bottom: flush list; divider line provides visual separation
+    padding: [4, 0, 4, 4]  # top=0: flush list; bottom=4: space after divider line
     spacing: 2
 
     canvas.after:
