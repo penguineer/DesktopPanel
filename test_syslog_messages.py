@@ -272,23 +272,3 @@ class TestSyslogMessageAcknowledge:
         assert msg.display_color() == Colors.COLOR_GREY
 
 
-class TestAmqpResourceConfigSyslog:
-    """Integration tests for syslog_channel in AmqpResourceConfiguration."""
-
-    def test_no_syslog_channel_by_default(self):
-        from amqp import AmqpResourceConfiguration
-        cfg = {'amqp': {}}
-        resource_cfg = AmqpResourceConfiguration.from_json_cfg(cfg)
-        assert resource_cfg.syslog_channel() is None
-
-    def test_syslog_channel_configured(self):
-        from amqp import AmqpResourceConfiguration
-        cfg = {'amqp': {'syslog_channel': 'syslog.DesktopPanel'}}
-        resource_cfg = AmqpResourceConfiguration.from_json_cfg(cfg)
-        assert resource_cfg.syslog_channel() == 'syslog.DesktopPanel'
-
-    def test_empty_syslog_channel_treated_as_none(self):
-        from amqp import AmqpResourceConfiguration
-        cfg = {'amqp': {'syslog_channel': ''}}
-        resource_cfg = AmqpResourceConfiguration.from_json_cfg(cfg)
-        assert resource_cfg.syslog_channel() is None

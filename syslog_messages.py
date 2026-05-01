@@ -4,6 +4,7 @@ import datetime
 import functools
 from typing import Optional
 
+from kivy import Logger
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import StringProperty, ListProperty, ColorProperty, NumericProperty, ObjectProperty
@@ -317,9 +318,9 @@ class SyslogEntry(BoxLayout):
 class SyslogMessagePanel(BoxLayout):
     """Kivy widget that displays a scrollable list of recent syslog messages.
 
-    Call :meth:`add_message` (on the Kivy main thread) to add new entries.
-    The panel keeps at most MAX_ENTRIES messages and refreshes time strings
-    every 30 seconds.
+    Assign :attr:`amqp_widget` and :attr:`amqp_queue` to let the panel
+    subscribe to the AMQP queue and receive messages autonomously.  No
+    syslog-specific code is needed in the host page or in ``amqp.py``.
 
     Only messages whose priority is at or above :attr:`min_priority` are shown.
     Set ``min_priority`` to a standard syslog level name (e.g. ``'error'``,
@@ -329,12 +330,20 @@ class SyslogMessagePanel(BoxLayout):
     seconds (0 = disabled).  Tapping an entry immediately acknowledges it.
     Acknowledged messages remain in the list until the MAX_ENTRIES limit
     is reached — they are never removed by time alone.
+
+    Set :attr:`message_callback` to a callable ``(SyslogMessage) -> None`` to
+    be notified of each newly received message (e.g. to update tab notifications
+    in the host page).
     """
 
     entries = ListProperty()
     border_color = ColorProperty(Colors.COLOR_GREY)
     min_priority = StringProperty('error')
     acknowledge_after = NumericProperty(3600)  # seconds; 0 = never auto-acknowledge
+
+    amqp_widget = ObjectProperty(None, allownone=True)
+    amqp_queue = StringProperty('')
+    message_callback = ObjectProperty(None, allownone=True)
 
     MAX_ENTRIES = 50
 
@@ -349,6 +358,32 @@ class SyslogMessagePanel(BoxLayout):
     def __del__(self):
         if self._refresh_clock:
             self._refresh_clock.cancel()
+
+    def on_amqp_widget(self, _instance, _value):
+        """Subscribe to the AMQP queue when the widget becomes available."""
+        self._update_amqp_subscription()
+
+    def on_amqp_queue(self, _instance, _value):
+        """Subscribe (or re-subscribe) when the queue name changes."""
+        self._update_amqp_subscription()
+
+    def _update_amqp_subscription(self):
+        """Register this panel as a consumer on the configured AMQP queue."""
+        if self.amqp_widget and self.amqp_queue:
+            self.amqp_widget.register_queue_consumer(
+                self.amqp_queue, self._on_amqp_message
+            )
+
+    def _on_amqp_message(self, channel, method, properties, _body):
+        """Raw pika consumer callback — parses the message and dispatches to the UI thread."""
+        try:
+            msg = SyslogMessage.from_amqp(method, properties)
+            if msg:
+                Clock.schedule_once(lambda dt: self.add_message(msg))
+            channel.basic_ack(delivery_tag=method.delivery_tag)
+        except Exception as e:
+            Logger.error("Syslog: Error processing AMQP message: %s", str(e))
+            channel.basic_ack(delivery_tag=method.delivery_tag)
 
     def on_min_priority(self, _instance, _value):
         """Re-render when the severity filter changes."""
@@ -369,6 +404,9 @@ class SyslogMessagePanel(BoxLayout):
         if len(self._messages) > self.MAX_ENTRIES:
             self._messages = self._messages[:self.MAX_ENTRIES]
         self._refresh_entries()
+
+        if self.message_callback:
+            self.message_callback(msg)
 
     def _acknowledge_message(self, msg: SyslogMessage):
         """Acknowledge a message and refresh the display."""

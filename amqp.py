@@ -15,7 +15,6 @@ from kivy.lang import Builder
 from kivy.properties import DictProperty
 
 from statusbar import TrayIcon
-from syslog_messages import SyslogMessage
 
 
 class AmqpAccessConfiguration(object):
@@ -82,30 +81,23 @@ class AmqpResourceConfiguration(object):
         return AmqpResourceConfiguration(
             declare=declare,
             command_channel=cfg_amqp.get("command_channel", AmqpResourceConfiguration.COMMAND_CHANNEL_DEFAULT),
-            syslog_channel=cfg_amqp.get("syslog_channel", None)
         )
 
     def __init__(self,
                  declare: bool = False,
-                 command_channel: str = COMMAND_CHANNEL_DEFAULT,
-                 syslog_channel: Optional[str] = None):
+                 command_channel: str = COMMAND_CHANNEL_DEFAULT):
         self._declare = declare
 
         if not command_channel:
             raise ValueError("Command channel must be declared!")
 
         self._command_channel = command_channel
-        self._syslog_channel = syslog_channel if syslog_channel else None
 
     def declare(self) -> bool:
         return self._declare
 
     def command_channel(self) -> str:
         return self._command_channel
-
-    def syslog_channel(self) -> Optional[str]:
-        """Optional AMQP queue name for incoming syslog messages, or None if not configured."""
-        return self._syslog_channel
 
 
 class AmqpCommandDispatch(object):
@@ -179,10 +171,10 @@ class AmqpConnector(object):
         self._connection = None
         self._channel = None
         self._consumer_tag = None
-        self._syslog_consumer_tag = None
+
+        self._extra_consumers = {}  # queue_name -> pika on_message_callback
 
         self._tray_icon = None
-        self._syslog_callback = None
 
     def setup(self):
         self._reconnect()
@@ -192,14 +184,22 @@ class AmqpConnector(object):
         self._terminating = True
         self._disconnect()
 
-    def set_syslog_callback(self, callback: Optional[Callable[['SyslogMessage'], None]]) -> None:
-        """Register a callback to receive parsed SyslogMessage objects.
+    def register_queue_consumer(self, queue_name: str, callback: Callable) -> None:
+        """Register a pika consumer on an additional AMQP queue.
 
-        The callback is invoked on the Kivy main thread via Clock.schedule_once.
+        If the channel is already open the consumer starts immediately.
+        Otherwise it is started automatically once the channel is ready.
+        Registering the same queue_name again replaces the previous callback.
 
-        :param callback: Callable accepting a single SyslogMessage argument, or None to remove.
+        :param queue_name: AMQP queue to consume from.
+        :param callback: Pika on_message_callback(channel, method, properties, body).
         """
-        self._syslog_callback = callback
+        self._extra_consumers[queue_name] = callback
+        if self._channel and not self._terminating:
+            self._start_extra_consumer(queue_name, callback)
+
+    def _start_extra_consumer(self, queue_name: str, callback: Callable) -> None:
+        self._channel.basic_consume(queue=queue_name, on_message_callback=callback)
 
     def update_tray_icon(self, tray_icon=None):
         if tray_icon:
@@ -295,22 +295,10 @@ class AmqpConnector(object):
         self._consumer_tag = self._channel.basic_consume(queue=self._resource_cfg.command_channel(),
                                                          on_message_callback=self._on_command_callback)
 
-        if self._resource_cfg.syslog_channel():
-            if self._resource_cfg.declare():
-                self._channel.queue_declare(queue=self._resource_cfg.syslog_channel(),
-                                            durable=True,
-                                            callback=self._on_bind_syslog)
-            else:
-                self._on_bind_syslog(None)
+        for queue_name, callback in self._extra_consumers.items():
+            self._start_extra_consumer(queue_name, callback)
 
         self.update_tray_icon()
-
-    def _on_bind_syslog(self, _method_frame):
-        Logger.info("AMQP: Starting to consume on syslog queue %s", self._resource_cfg.syslog_channel())
-        self._syslog_consumer_tag = self._channel.basic_consume(
-            queue=self._resource_cfg.syslog_channel(),
-            on_message_callback=self._on_syslog_callback
-        )
 
     def _on_command_callback(self, channel, method, _properties, body):
         try:
@@ -328,17 +316,6 @@ class AmqpConnector(object):
         except (json.decoder.JSONDecodeError, ValueError) as e:
             Logger.error("AMQP: Could not decode command snippet: %s", str(e))
             # ACK faulty to get them out of the queue
-            channel.basic_ack(delivery_tag=method.delivery_tag)
-
-    def _on_syslog_callback(self, channel, method, properties, _body):
-        try:
-            msg = SyslogMessage.from_amqp(method, properties)
-            if msg and self._syslog_callback:
-                callback = self._syslog_callback
-                Clock.schedule_once(lambda dt: callback(msg))
-            channel.basic_ack(delivery_tag=method.delivery_tag)
-        except Exception as e:
-            Logger.error("AMQP: Error processing syslog message: %s", str(e))
             channel.basic_ack(delivery_tag=method.delivery_tag)
 
 
@@ -363,7 +340,7 @@ class AmqpWidget(TrayIcon):
     def __init__(self, **kwargs):
         self._connector = None
         self._cmd_dispatch = AmqpCommandDispatch()
-        self._syslog_callback = None
+        self._queue_consumers = {}  # queue_name -> pika on_message_callback
 
         super(AmqpWidget, self).__init__(**kwargs)
 
@@ -373,16 +350,19 @@ class AmqpWidget(TrayIcon):
         """Register a command handler on the internal dispatcher"""
         self._cmd_dispatch.add_command_handler(command, handler)
 
-    def set_syslog_callback(self, callback: Optional[Callable[['SyslogMessage'], None]]) -> None:
-        """Register a callback that receives SyslogMessage objects from the syslog queue.
+    def register_queue_consumer(self, queue_name: str, callback: Callable) -> None:
+        """Register a pika consumer callback for an additional AMQP queue.
 
-        The callback is invoked on the Kivy main thread.
+        The consumer is started when the AMQP connection is established and
+        re-started automatically whenever the connection is re-established.
+        Registering the same queue_name again replaces the previous callback.
 
-        :param callback: Callable accepting a SyslogMessage, or None to remove.
+        :param queue_name: AMQP queue to consume from.
+        :param callback: Pika on_message_callback(channel, method, properties, body).
         """
-        self._syslog_callback = callback
+        self._queue_consumers[queue_name] = callback
         if self._connector:
-            self._connector.set_syslog_callback(callback)
+            self._connector.register_queue_consumer(queue_name, callback)
 
     def _on_conf(self, _instance, conf):
         if self._connector:
@@ -409,7 +389,8 @@ class AmqpWidget(TrayIcon):
                 amqp_resource_cfg=resource_cfg,
                 dispatch=self._cmd_dispatch
             )
-            connector.set_syslog_callback(self._syslog_callback)
+            for queue_name, callback in self._queue_consumers.items():
+                connector.register_queue_consumer(queue_name, callback)
             connector.update_tray_icon(self)
             connector.setup()
             self._connector = connector

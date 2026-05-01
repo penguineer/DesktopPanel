@@ -11,8 +11,7 @@
     "user": "<AMQP User>",
     "passwd": "<AMQP Password>",
     "declare": "true | false",
-    "command_channel": "<AMQP command channel>",
-    "syslog_channel": "<AMQP syslog queue name, e.g. syslog.DesktopPanel>"
+    "command_channel": "<AMQP command channel>"
   },
   "presence": {
     "svc": "<service url>",
@@ -41,6 +40,7 @@
       }
   },
   "system": {
+    "syslog_channel": "<AMQP syslog queue name, e.g. syslog.DesktopPanel>",
     "syslog_min_priority": "<min syslog level to display, e.g. error (default), warning, crit>",
     "syslog_acknowledge_after": "<integer seconds until messages turn grey, e.g. 3600 (default), 0 to disable>",
     "power": {

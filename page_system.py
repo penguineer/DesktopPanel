@@ -1,7 +1,7 @@
 """ Module for page System """
 
-from kivy.clock import Clock
 from kivy.lang import Builder
+from kivy.properties import ObjectProperty
 
 import globalcontent
 
@@ -22,8 +22,11 @@ Builder.load_string("""
         SyslogMessagePanel:
             id: syslog_panel
             size_hint_x: 0.5  # syslog panel width fraction; adjust here to resize
+            amqp_widget: root.amqp_widget
+            amqp_queue: root.conf.get('syslog_channel', '') if root.conf else ''
             min_priority: root.conf.get('syslog_min_priority', 'error') if root.conf else 'error'
             acknowledge_after: root.conf.get('syslog_acknowledge_after', 3600) if root.conf else 3600
+            message_callback: root._on_syslog_message
 
         AnchorLayout:
             anchor_x: 'right'
@@ -51,23 +54,14 @@ Builder.load_string("""
 
 
 class SystemPage(globalcontent.ContentPage):
-    def on_syslog_message(self, msg):
-        """Receive a new syslog message from the AMQP connector.
+    amqp_widget = ObjectProperty(None, allownone=True)
 
-        This method is safe to call from any thread; UI updates are
-        scheduled on the Kivy main thread.
-        """
-        Clock.schedule_once(lambda dt: self._handle_syslog(msg))
-
-    def _handle_syslog(self, msg):
-        self.ids.syslog_panel.add_message(msg)
-
+    def _on_syslog_message(self, msg):
+        """Update the tab notification badge when a new syslog message arrives."""
         if not self.active:
             if msg.is_critical():
                 self.notification = "Critical"
             elif msg.priority in ('error', 'err') and self.notification == "None":
-                # Only upgrade to Warning for error-level messages; info and
-                # below do not warrant a tab notification.
                 self.notification = "Warning"
 
     def on_active(self, _instance, active):
