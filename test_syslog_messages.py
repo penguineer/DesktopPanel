@@ -222,6 +222,10 @@ class TestPassesFilter:
         assert _passes_filter('info', 'not_a_level')
         assert _passes_filter('debug', 'not_a_level')
 
+    def test_both_unknown_priority_and_min_priority(self):
+        # Both map to _SEVERITY_UNKNOWN (8); level == threshold so passes.
+        assert _passes_filter('not_a_level', 'not_a_level')
+
 
 class TestAmqpResourceConfigSyslog:
     """Integration tests for syslog_channel in AmqpResourceConfiguration."""

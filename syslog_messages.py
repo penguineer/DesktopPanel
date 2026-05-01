@@ -187,7 +187,7 @@ Builder.load_string("""
     orientation: 'vertical'
     size_hint: 1, None
     height: _ENTRY_MIN_HEIGHT
-    padding: [4, 4, 4, 0]
+    padding: [4, 4, 4, 0]  # bottom=0: the divider line provides visual separation
     spacing: 2
 
     canvas.after:
