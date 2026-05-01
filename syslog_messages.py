@@ -47,7 +47,7 @@ def _passes_filter(priority, min_priority):
 
 
 # Entry layout metrics (used to compute per-entry heights)
-_ENTRY_PADDING_V = 4      # top and bottom padding inside each entry
+_ENTRY_PADDING_V = 0      # top and bottom padding inside each entry
 _ENTRY_META_HEIGHT = 14   # height of the single metadata row
 _ENTRY_SPACING = 2        # vertical spacing between metadata and message
 _ENTRY_LINE_HEIGHT = 16   # height per wrapped message line (12 pt font)
@@ -209,7 +209,7 @@ Builder.load_string("""
     orientation: 'vertical'
     size_hint: 1, None
     height: _ENTRY_MIN_HEIGHT
-    padding: [4, 4, 4, 0]  # bottom=0: the divider line provides visual separation
+    padding: [4, 0, 4, 0]  # no top/bottom: flush list; divider line provides visual separation
     spacing: 2
 
     canvas.after:
