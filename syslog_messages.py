@@ -404,8 +404,9 @@ class SyslogMessagePanel(BoxLayout):
 
     def on_max_entries(self, _instance, value):
         """Trim the message store and re-render when the limit is reduced."""
-        if len(self._messages) > value:
-            self._messages = self._messages[:int(value)]
+        limit = int(value)
+        if len(self._messages) > limit:
+            self._messages = self._messages[:limit]
         self._refresh_entries()
 
     def add_message(self, msg: SyslogMessage):
