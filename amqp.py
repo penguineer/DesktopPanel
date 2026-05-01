@@ -11,6 +11,10 @@ from pika.adapters.asyncio_connection import AsyncioConnection
 
 from kivy import Logger
 from kivy.clock import Clock
+from kivy.lang import Builder
+from kivy.properties import DictProperty
+
+from statusbar import TrayIcon
 
 
 class AmqpAccessConfiguration(object):
@@ -290,3 +294,71 @@ class AmqpConnector(object):
             Logger.error("AMQP: Could not decode command snippet: %s", str(e))
             # ACK faulty to get them out of the queue
             channel.basic_ack(delivery_tag=method.delivery_tag)
+
+
+Builder.load_string("""
+<AmqpWidget>:
+    label: 'AMQP'
+    icon: 'assets/rabbitmq_icon_64px.png'
+""")
+
+
+class _Colors:
+    COLOR_GREY = [77 / 256, 77 / 256, 76 / 256, 1]
+    COLOR_GREEN = [0 / 256, 163 / 256, 86 / 256, 1]
+    COLOR_RED = [228 / 256, 5 / 256, 41 / 256, 1]
+
+
+class AmqpWidget(TrayIcon):
+    """AMQP widget that manages the connector lifecycle and reacts to configuration changes"""
+
+    conf = DictProperty(None, allownone=True)
+
+    def __init__(self, **kwargs):
+        self._connector = None
+        self._cmd_dispatch = AmqpCommandDispatch()
+
+        super(AmqpWidget, self).__init__(**kwargs)
+
+        self.bind(conf=self._on_conf)
+
+    def add_command_handler(self, command: str, handler: Optional[Callable[[str, dict], None]]) -> None:
+        """Register a command handler on the internal dispatcher"""
+        self._cmd_dispatch.add_command_handler(command, handler)
+
+    def _on_conf(self, _instance, conf):
+        if self._connector:
+            self._connector.stop()
+            self._connector = None
+
+        if not conf:
+            self.icon_color = _Colors.COLOR_GREY
+            return
+
+        try:
+            access_cfg = AmqpAccessConfiguration.from_json_cfg(conf)
+            resource_cfg = AmqpResourceConfiguration.from_json_cfg(conf)
+
+            if access_cfg is None or resource_cfg is None:
+                Logger.warning("AMQP: Missing AMQP configuration, not connecting.")
+                self.icon_color = _Colors.COLOR_GREY
+                return
+
+            connector = AmqpConnector(
+                amqp_access_cfg=access_cfg,
+                amqp_resource_cfg=resource_cfg,
+                dispatch=self._cmd_dispatch
+            )
+            connector.update_tray_icon(self)
+            connector.setup()
+            self._connector = connector
+
+        except ValueError as e:
+            Logger.error("AMQP: Configuration error: %s", str(e))
+            self.icon_color = _Colors.COLOR_RED
+
+    def teardown(self):
+        """Stop the AMQP connector if active"""
+        if self._connector:
+            self._connector.stop()
+            self._connector = None

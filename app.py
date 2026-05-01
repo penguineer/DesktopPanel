@@ -8,7 +8,6 @@ import asyncio
 from datetime import datetime
 import signal
 import sys
-
 import json
 
 import amqp
@@ -18,7 +17,6 @@ from page_gtd import GtdPage
 from page_home import HomePage
 from page_system import SystemPage
 from reloadable_json import JsonObserver
-from statusbar import TrayIcon
 
 from kivy import Logger
 from kivy.config import Config
@@ -44,8 +42,6 @@ def sigint_handler(_signal, _frame):
 
 
 class TabbedPanelApp(App):
-    amqp_icon = ObjectProperty(None)
-
     conf_path = StringProperty()
     conf = ObjectProperty(None)
     mqttc = ObjectProperty(None)
@@ -55,6 +51,7 @@ class TabbedPanelApp(App):
 
         self.ca = None
         self.config_obs = None
+        self.amqp_widget = None
 
         self.bind(conf_path=self._on_conf_path)
         self.bind(conf=self._on_conf)
@@ -73,11 +70,21 @@ class TabbedPanelApp(App):
                                        failed_callback=None)
         self.config_obs.setup()
 
+        try:
+            with open(path, "r") as f:
+                self.schedule_update_configuration(json.load(f))
+        except FileNotFoundError as e:
+            Logger.warning("App: Configuration file not found: %s", e)
+        except json.decoder.JSONDecodeError as e:
+            Logger.warning("App: Invalid JSON in configuration file: %s", e)
+
     def _on_conf(self, _instance, conf: dict) -> None:
         if self.ca:
             self.ca.conf = conf
         if self.mqttc:
             self.mqttc.conf = conf.get("mqtt", None)
+        if self.amqp_widget:
+            self.amqp_widget.conf = conf
 
     def _on_mqttc(self, _instance, mqttc) -> None:
         if self.ca:
@@ -101,8 +108,12 @@ class TabbedPanelApp(App):
         ca.mqttc = self.mqttc
         ca.status_bar.tray_bar.register_widget(self.mqttc)
 
-        self.amqp_icon = TrayIcon(label='AMQP', icon="assets/rabbitmq_icon_64px.png")
-        ca.status_bar.tray_bar.register_widget(self.amqp_icon)
+        self.amqp_widget = amqp.AmqpWidget()
+        self.amqp_widget.conf = self.conf
+        self.amqp_widget.add_command_handler("test", command_log)
+        self.amqp_widget.add_command_handler("screenshot", command_screenshot)
+        self.amqp_widget.add_command_handler("presence popup", self.schedule_popup_presence_dlg)
+        ca.status_bar.tray_bar.register_widget(self.amqp_widget)
 
         self.ca = ca
         return ca
@@ -110,6 +121,8 @@ class TabbedPanelApp(App):
     def on_stop(self):
         if self.config_obs is not None:
             self.config_obs.teardown()
+        if self.amqp_widget is not None:
+            self.amqp_widget.teardown()
 
     def select(self, index):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
@@ -147,34 +160,12 @@ async def main():
     ])
     Window.size = (800, 480)
 
-    # TODO Move AMQP into widgets so that they can reload the configuration
-    with open("desktop-panel-config.json", "r") as f:
-        config = json.load(f)
-
-    amqp_access = amqp.AmqpAccessConfiguration.from_json_cfg(config)
-    amqp_resource = amqp.AmqpResourceConfiguration.from_json_cfg(config)
-    cmd_dispatch = amqp.AmqpCommandDispatch()
-    amqp_conn = amqp.AmqpConnector(amqp_access_cfg=amqp_access,
-                                   amqp_resource_cfg=amqp_resource,
-                                   dispatch=cmd_dispatch)
-    amqp_conn.setup()
-
     # build and run app
     app = TabbedPanelApp()
-    app.schedule_update_configuration(config)
-    # Setup path for automatic reloading
-    # We still need to preload the configuration until MQTT and AMQP are moved into widgets
+    # Setup path for automatic reloading with initial configuration pre-load
     app.conf_path = "desktop-panel-config.json"
-    app.bind(amqp_icon=lambda i, v: amqp_conn.update_tray_icon(v))
-
-    # TODO bind command handlers
-    cmd_dispatch.add_command_handler("test", command_log)
-    cmd_dispatch.add_command_handler("screenshot", command_screenshot)
-    cmd_dispatch.add_command_handler("presence popup", app.schedule_popup_presence_dlg)
 
     await app.async_run()
-
-    amqp_conn.stop()
 
 
 if __name__ == '__main__':
