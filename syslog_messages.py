@@ -271,7 +271,7 @@ Builder.load_string("""
 
 <SyslogMessagePanel>:
     orientation: 'vertical'
-    padding: [4, 4, 4, 4]
+    padding: [4, 0, 4, 4]
     spacing: 2
 
     canvas.before:
