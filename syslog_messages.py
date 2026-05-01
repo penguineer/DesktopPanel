@@ -18,6 +18,26 @@ class Colors:
 
 _SEVERITY_CRITICAL = frozenset(('crit', 'critical', 'alert', 'emerg', 'panic'))
 
+# Entry layout metrics (used to compute per-entry heights)
+_ENTRY_PADDING_V = 4      # top and bottom padding inside each entry
+_ENTRY_META_HEIGHT = 14   # height of the single metadata row
+_ENTRY_SPACING = 2        # vertical spacing between metadata and message
+_ENTRY_LINE_HEIGHT = 16   # height per wrapped message line (12 pt font)
+_ENTRY_CHARS_PER_LINE = 50  # rough estimate for word-wrap at ~50 % panel width
+
+
+def _msg_lines(text):
+    """Estimate wrapped line count for a message, capped at 3."""
+    if not text:
+        return 1
+    return min(3, max(1, -(-len(text) // _ENTRY_CHARS_PER_LINE)))
+
+
+def _entry_height(text):
+    """Total pixel height for an entry given its message text."""
+    return (2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT
+            + _ENTRY_SPACING + _msg_lines(text) * _ENTRY_LINE_HEIGHT)
+
 
 class SyslogMessage(object):
     """A syslog message received from AMQP.
@@ -134,29 +154,57 @@ Builder.load_string("""
 <SyslogEntry>:
     orientation: 'vertical'
     size_hint: 1, None
-    height: 72
+    height: 40
     padding: [4, 4]
     spacing: 2
 
     canvas.before:
         Color:
-            rgba: (0.12, 0.12, 0.12, 1) if root.entry_index % 2 == 1 else (0, 0, 0, 1)
+            rgba: (77/256.0, 77/256.0, 76/256.0, 1) if root.entry_index % 2 == 1 else (0, 0, 0, 1)
         Rectangle:
             pos: self.pos
             size: self.size
 
-    Label:
-        text: root.msg_host + '  ' + root.msg_time + '  ' + root.msg_program + ' (' + root.msg_facility + ')'
-        font_size: 10
-        font_name: 'assets/FiraMono-Regular.ttf'
-        color: root.entry_color
-        halign: 'left'
-        valign: 'center'
-        text_size: self.size
-        shorten: True
-        shorten_from: 'right'
+    BoxLayout:
+        orientation: 'horizontal'
         size_hint_y: None
         height: 14
+        spacing: 4
+
+        Label:
+            text: root.msg_time
+            font_size: 10
+            font_name: 'assets/FiraMono-Regular.ttf'
+            color: root.entry_color
+            halign: 'left'
+            valign: 'center'
+            text_size: self.size
+            size_hint_x: None
+            width: 82
+
+        Label:
+            text: root.msg_host
+            font_size: 10
+            font_name: 'assets/FiraMono-Regular.ttf'
+            color: root.entry_color
+            halign: 'left'
+            valign: 'center'
+            text_size: self.size
+            size_hint_x: 1
+            shorten: True
+            shorten_from: 'right'
+
+        Label:
+            text: root.msg_program + ' (' + root.msg_facility + ')'
+            font_size: 10
+            font_name: 'assets/FiraMono-Regular.ttf'
+            color: root.entry_color
+            halign: 'right'
+            valign: 'center'
+            text_size: self.size
+            size_hint_x: 1
+            shorten: True
+            shorten_from: 'left'
 
     Label:
         text: root.msg_text
@@ -166,11 +214,11 @@ Builder.load_string("""
         valign: 'top'
         text_size: [self.width, self.height]
         size_hint_y: None
-        height: 48
+        height: root.msg_height
 
 <SyslogMessagePanel>:
     orientation: 'vertical'
-    padding: [4, 4, 8, 4]
+    padding: [4, 4, 4, 4]
     spacing: 2
 
     canvas.before:
@@ -190,7 +238,7 @@ Builder.load_string("""
 
         RecycleBoxLayout:
             orientation: 'vertical'
-            default_size: 0, 72
+            default_size: 0, 40
             default_size_hint: 1, None
             size_hint_y: None
             height: self.minimum_height
@@ -203,6 +251,7 @@ class SyslogEntry(BoxLayout):
     msg_facility = StringProperty('')
     msg_program = StringProperty('')
     msg_text = StringProperty('')
+    msg_height = NumericProperty(_ENTRY_LINE_HEIGHT)
     entry_color = ColorProperty(Colors.COLOR_WHITE)
     entry_index = NumericProperty(0)
 
@@ -247,12 +296,14 @@ class SyslogMessagePanel(BoxLayout):
         self.entries = [
             {
                 'size_hint': [1, None],
+                'height': _entry_height(msg.message),
                 'entry_index': i,
                 'msg_time': msg.formatted_time(),
                 'msg_host': msg.host,
                 'msg_facility': msg.facility,
                 'msg_program': msg.program,
                 'msg_text': msg.message,
+                'msg_height': _msg_lines(msg.message) * _ENTRY_LINE_HEIGHT,
                 'entry_color': msg.entry_color(),
             }
             for i, msg in enumerate(self._messages)

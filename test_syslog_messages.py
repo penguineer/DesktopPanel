@@ -4,7 +4,10 @@ import datetime
 
 import pytest
 
-from syslog_messages import SyslogMessage, Colors
+from syslog_messages import (SyslogMessage, Colors,
+                             _msg_lines, _entry_height,
+                             _ENTRY_CHARS_PER_LINE, _ENTRY_LINE_HEIGHT,
+                             _ENTRY_META_HEIGHT, _ENTRY_SPACING, _ENTRY_PADDING_V)
 
 
 class _FakeMethod:
@@ -141,6 +144,31 @@ class TestSyslogMessageFormattedTime:
         assert result[2] == '.'
         assert result[5] == ' '
         assert result[8] == ':'
+
+
+class TestEntryHeightHelpers:
+    def test_empty_message_is_one_line(self):
+        assert _msg_lines('') == 1
+
+    def test_short_message_is_one_line(self):
+        assert _msg_lines('short') == 1
+
+    def test_exact_one_line_boundary(self):
+        assert _msg_lines('x' * _ENTRY_CHARS_PER_LINE) == 1
+
+    def test_one_char_over_boundary_is_two_lines(self):
+        assert _msg_lines('x' * (_ENTRY_CHARS_PER_LINE + 1)) == 2
+
+    def test_long_message_capped_at_three_lines(self):
+        assert _msg_lines('x' * (_ENTRY_CHARS_PER_LINE * 10)) == 3
+
+    def test_entry_height_one_line(self):
+        expected = 2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + _ENTRY_LINE_HEIGHT
+        assert _entry_height('short') == expected
+
+    def test_entry_height_three_lines(self):
+        expected = 2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + 3 * _ENTRY_LINE_HEIGHT
+        assert _entry_height('x' * (_ENTRY_CHARS_PER_LINE * 10)) == expected
 
 
 class TestAmqpResourceConfigSyslog:
