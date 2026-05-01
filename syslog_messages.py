@@ -220,7 +220,7 @@ Builder.load_string("""
         valign: 'top'
         text_size: [self.width, self.height]
         size_hint_y: None
-        height: root.msg_height
+        height: root.msg_text_height
 
 <SyslogMessagePanel>:
     orientation: 'vertical'
@@ -257,7 +257,7 @@ class SyslogEntry(BoxLayout):
     msg_facility = StringProperty('')
     msg_program = StringProperty('')
     msg_text = StringProperty('')
-    msg_height = NumericProperty(_ENTRY_LINE_HEIGHT)
+    msg_text_height = NumericProperty(_ENTRY_LINE_HEIGHT)
     entry_color = ColorProperty(Colors.COLOR_WHITE)
     entry_index = NumericProperty(0)
 
@@ -309,7 +309,7 @@ class SyslogMessagePanel(BoxLayout):
                 'msg_facility': msg.facility,
                 'msg_program': msg.program,
                 'msg_text': msg.message,
-                'msg_height': _msg_lines(msg.message) * _ENTRY_LINE_HEIGHT,
+                'msg_text_height': _msg_lines(msg.message) * _ENTRY_LINE_HEIGHT,
                 'entry_color': msg.entry_color(),
             }
             for i, msg in enumerate(self._messages)
