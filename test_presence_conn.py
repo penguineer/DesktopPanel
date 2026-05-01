@@ -57,7 +57,6 @@ class TestPresenceTracker:
     def test_initial_state(self):
         tracker = _PresenceTrackerLogic()
         assert tracker.tracked_entries == []
-        assert tracker._last_status is None
 
     def test_first_presence(self):
         tracker = _PresenceTrackerLogic()
@@ -70,14 +69,18 @@ class TestPresenceTracker:
         assert entry.since == "2024-01-01T10:00:00+00:00"
         assert entry.is_current is True
 
-    def test_same_status_not_duplicated(self):
+    def test_same_status_creates_new_entry(self):
         tracker = _PresenceTrackerLogic()
         p1 = self._make_presence("present", "2024-01-01T10:00:00+00:00")
         p2 = self._make_presence("present", "2024-01-01T10:05:00+00:00")
         tracker.update(p1)
         tracker.update(p2)
 
-        assert len(tracker.tracked_entries) == 1
+        assert len(tracker.tracked_entries) == 2
+        assert tracker.tracked_entries[0].status == "present"
+        assert tracker.tracked_entries[0].is_current is True
+        assert tracker.tracked_entries[1].status == "present"
+        assert tracker.tracked_entries[1].until == "2024-01-01T10:05:00+00:00"
 
     def test_status_change_closes_previous(self):
         tracker = _PresenceTrackerLogic()
@@ -137,13 +140,9 @@ class _PresenceTrackerLogic:
 
     def __init__(self):
         self.tracked_entries = []
-        self._last_status = None
 
     def update(self, value):
         if value is None:
-            return
-
-        if value.status == self._last_status:
             return
 
         since = value.timestamp if value.timestamp else \
@@ -165,4 +164,3 @@ class _PresenceTrackerLogic:
         ))
 
         self.tracked_entries = new_entries
-        self._last_status = value.status

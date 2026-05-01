@@ -102,14 +102,10 @@ class PresenceTracker(Widget):
     def __init__(self, **kwargs):
         super(PresenceTracker, self).__init__(**kwargs)
 
-        self._last_status = None
         self.bind(active_presence=self._on_active_presence)
 
     def _on_active_presence(self, _instance, value):
         if value is None:
-            return
-
-        if value.status == self._last_status:
             return
 
         since = value.timestamp if value.timestamp else \
@@ -133,7 +129,6 @@ class PresenceTracker(Widget):
         ))
 
         self.tracked_entries = new_entries
-        self._last_status = value.status
 
 
 class PresencePublisher(Widget):
