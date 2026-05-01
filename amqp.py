@@ -336,8 +336,10 @@ class AmqpWidget(TrayIcon):
             return
 
         try:
-            access_cfg = AmqpAccessConfiguration.from_json_cfg(conf)
-            resource_cfg = AmqpResourceConfiguration.from_json_cfg(conf)
+            # conf is the amqp-specific section; wrap it for the existing factory methods
+            cfg = {"amqp": conf}
+            access_cfg = AmqpAccessConfiguration.from_json_cfg(cfg)
+            resource_cfg = AmqpResourceConfiguration.from_json_cfg(cfg)
 
             if access_cfg is None or resource_cfg is None:
                 Logger.warning("AMQP: Missing AMQP configuration, not connecting.")

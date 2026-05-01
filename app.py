@@ -84,7 +84,7 @@ class TabbedPanelApp(App):
         if self.mqttc:
             self.mqttc.conf = conf.get("mqtt", None)
         if self.amqp_widget:
-            self.amqp_widget.conf = conf
+            self.amqp_widget.conf = conf.get("amqp", None) if conf else None
 
     def _on_mqttc(self, _instance, mqttc) -> None:
         if self.ca:
@@ -109,7 +109,7 @@ class TabbedPanelApp(App):
         ca.status_bar.tray_bar.register_widget(self.mqttc)
 
         self.amqp_widget = amqp.AmqpWidget()
-        self.amqp_widget.conf = self.conf
+        self.amqp_widget.conf = self.conf.get("amqp", None) if self.conf else None
         self.amqp_widget.add_command_handler("test", command_log)
         self.amqp_widget.add_command_handler("screenshot", command_screenshot)
         self.amqp_widget.add_command_handler("presence popup", self.schedule_popup_presence_dlg)
