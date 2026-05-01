@@ -282,43 +282,50 @@ Builder.load_string("""
                 root.pos[0] + root.size[0] - 2, root.pos[1] + 4, \\ 
                 root.pos[0] + root.size[0] - 2, root.pos[1] + root.size[1] - 4 
 
-    # Scroll indicator: grey ▲ when there are entries above the current viewport
-    Label:
-        text: '▲'
-        font_size: 12
-        font_name: 'assets/FiraMono-Regular.ttf'
-        color: 77/256.0, 77/256.0, 76/256.0, 1
-        halign: 'center'
-        valign: 'center'
-        size_hint_y: None
-        height: 14
-        opacity: 1 if root._has_more_above else 0
-
-    RecycleView:
-        id: rv
-        data: root.entries
-        viewclass: 'SyslogEntry'
+    # FloatLayout lets the scroll indicators float over the list without
+    # consuming any vertical space of their own.
+    FloatLayout:
         size_hint: 1, 1
-        bar_width: 0
 
-        RecycleBoxLayout:
-            orientation: 'vertical'
-            default_size: 0, _ENTRY_MIN_HEIGHT
-            default_size_hint: 1, None
-            size_hint_y: None
-            height: self.minimum_height
+        RecycleView:
+            id: rv
+            data: root.entries
+            viewclass: 'SyslogEntry'
+            size_hint: 1, 1
+            bar_width: 0
 
-    # Scroll indicator: grey ▼ when there are entries below the current viewport
-    Label:
-        text: '▼'
-        font_size: 12
-        font_name: 'assets/FiraMono-Regular.ttf'
-        color: 77/256.0, 77/256.0, 76/256.0, 1
-        halign: 'center'
-        valign: 'center'
-        size_hint_y: None
-        height: 14
-        opacity: 1 if root._has_more_below else 0
+            RecycleBoxLayout:
+                orientation: 'vertical'
+                default_size: 0, _ENTRY_MIN_HEIGHT
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+
+        # ▲ overlaid at the very top of the list
+        Label:
+            text: '▲'
+            font_size: 12
+            font_name: 'assets/FiraMono-Regular.ttf'
+            color: 77/256.0, 77/256.0, 76/256.0, 1
+            halign: 'center'
+            valign: 'center'
+            size_hint: 1, None
+            height: 14
+            pos_hint: {'top': 1}
+            opacity: 1 if root._has_more_above else 0
+
+        # ▼ overlaid at the very bottom of the list
+        Label:
+            text: '▼'
+            font_size: 12
+            font_name: 'assets/FiraMono-Regular.ttf'
+            color: 77/256.0, 77/256.0, 76/256.0, 1
+            halign: 'center'
+            valign: 'center'
+            size_hint: 1, None
+            height: 14
+            pos_hint: {'y': 0}
+            opacity: 1 if root._has_more_below else 0
 """)
 
 
