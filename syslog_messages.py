@@ -18,6 +18,32 @@ class Colors:
 
 _SEVERITY_CRITICAL = frozenset(('crit', 'critical', 'alert', 'emerg', 'panic'))
 
+# Syslog severity levels: lower number = more severe (follows RFC 5424)
+_SEVERITY_ORDER = {
+    'emerg': 0, 'panic': 0,
+    'alert': 1,
+    'crit': 2, 'critical': 2,
+    'err': 3, 'error': 3,
+    'warning': 4, 'warn': 4,
+    'notice': 5,
+    'info': 6,
+    'debug': 7,
+}
+_SEVERITY_UNKNOWN = 8  # unknown priorities are treated as below debug
+
+
+def _passes_filter(priority, min_priority):
+    """True if *priority* is at or above (more severe than) *min_priority*.
+
+    Both arguments are lower-cased syslog priority strings.  Unknown priority
+    strings are treated as the lowest possible severity and therefore fail any
+    filter with a defined min_priority.
+    """
+    level = _SEVERITY_ORDER.get(priority, _SEVERITY_UNKNOWN)
+    threshold = _SEVERITY_ORDER.get(min_priority, _SEVERITY_UNKNOWN)
+    return level <= threshold
+
+
 # Entry layout metrics (used to compute per-entry heights)
 _ENTRY_PADDING_V = 4      # top and bottom padding inside each entry
 _ENTRY_META_HEIGHT = 14   # height of the single metadata row
@@ -161,15 +187,14 @@ Builder.load_string("""
     orientation: 'vertical'
     size_hint: 1, None
     height: _ENTRY_MIN_HEIGHT
-    padding: [4, 4]
+    padding: [4, 4, 4, 0]
     spacing: 2
 
-    canvas.before:
+    canvas.after:
         Color:
-            rgba: (77/256.0, 77/256.0, 76/256.0, 1) if root.entry_index % 2 == 1 else (0, 0, 0, 1)
-        Rectangle:
-            pos: self.pos
-            size: self.size
+            rgba: 77/256.0, 77/256.0, 76/256.0, 1
+        Line:
+            points: self.pos[0], self.pos[1], self.pos[0] + self.size[0], self.pos[1]
 
     BoxLayout:
         orientation: 'horizontal'
@@ -259,7 +284,6 @@ class SyslogEntry(BoxLayout):
     msg_text = StringProperty('')
     msg_text_height = NumericProperty(_ENTRY_LINE_HEIGHT)
     entry_color = ColorProperty(Colors.COLOR_WHITE)
-    entry_index = NumericProperty(0)
 
 
 class SyslogMessagePanel(BoxLayout):
@@ -268,10 +292,15 @@ class SyslogMessagePanel(BoxLayout):
     Call :meth:`add_message` (on the Kivy main thread) to add new entries.
     The panel keeps at most MAX_ENTRIES messages and refreshes time strings
     every 30 seconds.
+
+    Only messages whose priority is at or above :attr:`min_priority` are shown.
+    Set ``min_priority`` to a standard syslog level name (e.g. ``'error'``,
+    ``'warning'``, ``'info'``) to control which messages appear.
     """
 
     entries = ListProperty()
     border_color = ColorProperty(Colors.COLOR_GREY)
+    min_priority = StringProperty('error')
 
     MAX_ENTRIES = 50
 
@@ -287,9 +316,15 @@ class SyslogMessagePanel(BoxLayout):
         if self._refresh_clock:
             self._refresh_clock.cancel()
 
-    def add_message(self, msg: SyslogMessage):
-        """Add a new syslog message to the top of the list.
+    def on_min_priority(self, _instance, _value):
+        """Re-render when the severity filter changes."""
+        self._refresh_entries()
 
+    def add_message(self, msg: SyslogMessage):
+        """Add a new syslog message to the store and update the display.
+
+        Messages are stored regardless of the current filter so that raising
+        the minimum priority later can reveal previously received messages.
         Must be called on the Kivy main thread.
         """
         self._messages.insert(0, msg)
@@ -303,7 +338,6 @@ class SyslogMessagePanel(BoxLayout):
             {
                 'size_hint': [1, None],
                 'height': _entry_height(msg.message),
-                'entry_index': i,
                 'msg_time': msg.formatted_time(),
                 'msg_host': msg.host,
                 'msg_facility': msg.facility,
@@ -312,6 +346,7 @@ class SyslogMessagePanel(BoxLayout):
                 'msg_text_height': _msg_lines(msg.message) * _ENTRY_LINE_HEIGHT,
                 'entry_color': msg.entry_color(),
             }
-            for i, msg in enumerate(self._messages)
+            for msg in self._messages
+            if _passes_filter(msg.priority, self.min_priority)
         ]
         Clock.schedule_once(lambda dt: self.ids.rv.refresh_from_data())

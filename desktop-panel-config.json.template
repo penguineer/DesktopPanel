@@ -41,6 +41,7 @@
       }
   },
   "system": {
+    "syslog_min_priority": "<min syslog level to display, e.g. error (default), warning, crit>",
     "power": {
         "topic": "<MQTT topic>"
     },

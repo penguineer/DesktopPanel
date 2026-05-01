@@ -22,6 +22,7 @@ Builder.load_string("""
         SyslogMessagePanel:
             id: syslog_panel
             size_hint_x: 0.5  # syslog panel width fraction; adjust here to resize
+            min_priority: root.conf.get('syslog_min_priority', 'error') if root.conf else 'error'
 
         AnchorLayout:
             anchor_x: 'right'
@@ -63,9 +64,9 @@ class SystemPage(globalcontent.ContentPage):
         if not self.active:
             if msg.is_critical():
                 self.notification = "Critical"
-            elif self.notification == "None":
-                # "None" is the OptionProperty default defined in ContentPage;
-                # only upgrade to Warning if no higher-priority notification is active.
+            elif msg.priority in ('error', 'err') and self.notification == "None":
+                # Only upgrade to Warning for error-level messages; info and
+                # below do not warrant a tab notification.
                 self.notification = "Warning"
 
     def on_active(self, _instance, active):

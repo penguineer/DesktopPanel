@@ -5,7 +5,7 @@ import datetime
 import pytest
 
 from syslog_messages import (SyslogMessage, Colors,
-                             _msg_lines, _entry_height,
+                             _msg_lines, _entry_height, _passes_filter,
                              _ENTRY_CHARS_PER_LINE, _ENTRY_LINE_HEIGHT,
                              _ENTRY_MIN_HEIGHT,
                              _ENTRY_META_HEIGHT, _ENTRY_SPACING, _ENTRY_PADDING_V)
@@ -170,6 +170,57 @@ class TestEntryHeightHelpers:
     def test_entry_height_three_lines(self):
         expected = 2 * _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + 3 * _ENTRY_LINE_HEIGHT
         assert _entry_height('x' * (_ENTRY_CHARS_PER_LINE * 10)) == expected
+
+
+class TestPassesFilter:
+    def test_critical_passes_error_filter(self):
+        assert _passes_filter('crit', 'error')
+
+    def test_error_passes_error_filter(self):
+        assert _passes_filter('error', 'error')
+
+    def test_err_alias_passes_error_filter(self):
+        assert _passes_filter('err', 'error')
+
+    def test_warning_blocked_by_error_filter(self):
+        assert not _passes_filter('warning', 'error')
+
+    def test_info_blocked_by_error_filter(self):
+        assert not _passes_filter('info', 'error')
+
+    def test_debug_blocked_by_error_filter(self):
+        assert not _passes_filter('debug', 'error')
+
+    def test_unknown_priority_blocked_by_error_filter(self):
+        assert not _passes_filter('unknown_level', 'error')
+
+    def test_critical_passes_warning_filter(self):
+        assert _passes_filter('crit', 'warning')
+
+    def test_warning_passes_warning_filter(self):
+        assert _passes_filter('warning', 'warning')
+
+    def test_info_blocked_by_warning_filter(self):
+        assert not _passes_filter('info', 'warning')
+
+    def test_info_passes_info_filter(self):
+        assert _passes_filter('info', 'info')
+
+    def test_debug_blocked_by_info_filter(self):
+        assert not _passes_filter('debug', 'info')
+
+    def test_emerg_passes_crit_filter(self):
+        assert _passes_filter('emerg', 'crit')
+
+    def test_panic_alias_passes_crit_filter(self):
+        assert _passes_filter('panic', 'crit')
+
+    def test_filter_with_unknown_min_priority(self):
+        # An unrecognized min_priority string maps to _SEVERITY_UNKNOWN (8),
+        # which is numerically below all known severity levels, so all known
+        # priorities pass through (fail-open: misconfiguration shows messages).
+        assert _passes_filter('info', 'not_a_level')
+        assert _passes_filter('debug', 'not_a_level')
 
 
 class TestAmqpResourceConfigSyslog:
