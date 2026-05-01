@@ -115,7 +115,8 @@ class PresenceTracker(Widget):
         self.bind(active_presence=self._on_active_presence)
 
     def on_requested_status(self, _instance, value):
-        """Latch an explicit user request so that the guard can be bypassed."""
+        """Latch an explicit user request so that the next matching status update
+        bypasses the deduplication guard. The latch is consumed after one use."""
         if value is not None:
             self._force_next_status = value
 

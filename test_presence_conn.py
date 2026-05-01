@@ -94,6 +94,7 @@ class TestPresenceTracker:
         assert len(tracker.tracked_entries) == 2
         assert tracker.tracked_entries[0].status == "present"
         assert tracker.tracked_entries[0].is_current is True
+        assert tracker.tracked_entries[0].since == "2024-01-01T10:05:00+00:00"
         assert tracker.tracked_entries[1].status == "present"
         assert tracker.tracked_entries[1].is_current is False
         assert tracker.tracked_entries[1].until == "2024-01-01T10:05:00+00:00"
