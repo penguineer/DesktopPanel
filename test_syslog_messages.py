@@ -108,8 +108,11 @@ class TestSyslogMessageSeverity:
         assert msg.entry_color() == Colors.COLOR_YELLOW
 
     def test_entry_color_info(self):
+        # Non-error / non-critical priorities use grey (defensive; these
+        # should be filtered out at the RabbitMQ level before reaching
+        # DesktopPanel).
         msg = self._make('info')
-        assert msg.entry_color() == Colors.COLOR_YELLOW
+        assert msg.entry_color() == Colors.COLOR_GREY
 
 
 class TestSyslogMessageHumanizedAge:

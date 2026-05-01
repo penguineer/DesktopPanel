@@ -64,9 +64,13 @@ class SystemPage(globalcontent.ContentPage):
             if msg.is_critical():
                 self.notification = "Critical"
             elif self.notification == "None":
+                # "None" is the OptionProperty default defined in ContentPage;
+                # only upgrade to Warning if no higher-priority notification is active.
                 self.notification = "Warning"
 
     def on_active(self, _instance, active):
+        # ContentPage.on_active updates the tab button's active state;
+        # call super() to preserve that behaviour before clearing the notification.
         super().on_active(_instance, active)
         if active:
             self.notification = "None"

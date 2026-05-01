@@ -107,10 +107,17 @@ class SyslogMessage(object):
         return self._priority in _SEVERITY_CRITICAL
 
     def entry_color(self):
-        """Return the RGBA display color reflecting severity."""
+        """Return the RGBA display color reflecting severity.
+
+        Returns red for critical-or-higher priorities, yellow for error-level,
+        and grey for anything else (which should not normally appear if the
+        RabbitMQ queue is filtered correctly).
+        """
         if self.is_critical():
             return Colors.COLOR_RED
-        return Colors.COLOR_YELLOW
+        if self._priority in ('error', 'err'):
+            return Colors.COLOR_YELLOW
+        return Colors.COLOR_GREY
 
     def humanized_age(self):
         """Return a human-readable age string relative to when the message was received."""
