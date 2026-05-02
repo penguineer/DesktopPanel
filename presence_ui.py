@@ -285,6 +285,7 @@ Builder.load_string("""
             id: sv
             size_hint: 1, 1
             do_scroll_x: False
+            bar_width: 0
 
             BoxLayout:
                 id: history_box
@@ -791,6 +792,25 @@ class PresenceTrayWidget(RelativeLayout):
 
         self.pr_sel = None
 
+    def on_kv_post(self, base_widget):
+        """Bind history fetcher so it seeds the tracker when no session data exists."""
+        self.ids.history_fetcher.bind(tracked_entries=self._seed_tracker_from_history)
+
+    def _seed_tracker_from_history(self, _instance, entries):
+        """Replace the tracker with the authoritative history fetched from the server.
+
+        A freshly fetched history is always the source of truth and completely
+        replaces the local tracker list so that changes made by other parties
+        are immediately reflected.  The only exception is when the user has an
+        optimistic entry in progress (they pressed a button but the server
+        round-trip has not completed yet); in that case the optimistic entry is
+        preserved to maintain immediate visual feedback.
+        """
+        tracker = self.ids.presence_tracker
+        if tracker.has_optimistic_entry:
+            return
+        tracker.tracked_entries = entries
+
     def popup_handler(self, _cmd=None, _args=None):
         Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
 
@@ -815,8 +835,8 @@ class PresenceTrayWidget(RelativeLayout):
             self.pr_sel.presence_list = self.presence_list
             self.bind(presence_list=self.pr_sel.setter('presence_list'))
 
-            self.pr_sel.tracked_entries = self.ids.history_fetcher.tracked_entries
-            self.ids.history_fetcher.bind(tracked_entries=self.pr_sel.setter('tracked_entries'))
+            self.pr_sel.tracked_entries = self.ids.presence_tracker.tracked_entries
+            self.ids.presence_tracker.bind(tracked_entries=self.pr_sel.setter('tracked_entries'))
 
             self.pr_sel.requested_status = self.ids.change_handler.requested_status
             self.ids.change_handler.bind(requested_status=self.pr_sel.setter('requested_status'))
