@@ -797,20 +797,19 @@ class PresenceTrayWidget(RelativeLayout):
         self.ids.history_fetcher.bind(tracked_entries=self._seed_tracker_from_history)
 
     def _seed_tracker_from_history(self, _instance, entries):
-        """Populate the tracker with historical entries fetched from the server.
+        """Replace the tracker with the authoritative history fetched from the server.
 
-        Seeding is skipped if the user has an optimistic entry in progress
-        (they clicked a button before the fetch returned) so that immediate
-        feedback is never discarded.  In all other cases, if the server
-        delivers more entries than are locally tracked, those richer historical
-        entries replace the tracker contents so the full history is visible in
-        the dialog.
+        A freshly fetched history is always the source of truth and completely
+        replaces the local tracker list so that changes made by other parties
+        are immediately reflected.  The only exception is when the user has an
+        optimistic entry in progress (they pressed a button but the server
+        round-trip has not completed yet); in that case the optimistic entry is
+        preserved to maintain immediate visual feedback.
         """
         tracker = self.ids.presence_tracker
         if tracker.has_optimistic_entry:
             return
-        if len(entries) > len(tracker.tracked_entries):
-            tracker.tracked_entries = entries
+        tracker.tracked_entries = entries
 
     def popup_handler(self, _cmd=None, _args=None):
         Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
