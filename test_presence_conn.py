@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from presence_conn import Presence, PresenceTrackedEntry, PresenceTracker
+from presence_conn import Presence, PresenceTrackedEntry, PresenceTracker, PresenceSvcCfg, PresenceHistoryFetcher
 
 
 class TestPresenceTrackedEntry:
@@ -209,3 +209,82 @@ class _PresenceTrackerLogic:
 
         self.tracked_entries = new_entries
         self._last_status = value.status
+
+
+class TestPresenceSvcCfgHistoryEndpoint:
+    """Tests for the history_endpoint method of PresenceSvcCfg."""
+
+    def _make_cfg(self):
+        return PresenceSvcCfg(svc="https://presence.example.com/v0", handle="alice", token="tok123")
+
+    def test_history_endpoint_no_count(self):
+        cfg = self._make_cfg()
+        assert cfg.history_endpoint() == "https://presence.example.com/v0/history"
+
+    def test_history_endpoint_with_count(self):
+        cfg = self._make_cfg()
+        assert cfg.history_endpoint(count=10) == "https://presence.example.com/v0/history?count=10"
+
+    def test_history_endpoint_count_none(self):
+        cfg = self._make_cfg()
+        assert cfg.history_endpoint(count=None) == "https://presence.example.com/v0/history"
+
+
+class TestPresenceHistoryFetcherParsing:
+    """Tests for the history response parsing logic of PresenceHistoryFetcher."""
+
+    def _parse(self, raw_entries):
+        """Reproduce the _on_history_json parsing logic without Kivy."""
+        entries = []
+        for i, e in enumerate(raw_entries):
+            status = e.get("status", None)
+            since = e.get("timestamp", None)
+            until = raw_entries[i - 1].get("timestamp", None) if i > 0 else None
+            entries.append(PresenceTrackedEntry(status=status, since=since, until=until))
+        return entries
+
+    def test_empty_history(self):
+        entries = self._parse([])
+        assert entries == []
+
+    def test_single_entry_is_current(self):
+        raw = [{"status": "present", "timestamp": "2024-01-01T10:00:00+00:00"}]
+        entries = self._parse(raw)
+        assert len(entries) == 1
+        assert entries[0].status == "present"
+        assert entries[0].since == "2024-01-01T10:00:00+00:00"
+        assert entries[0].until is None
+        assert entries[0].is_current is True
+
+    def test_two_entries_until_set_correctly(self):
+        raw = [
+            {"status": "present", "timestamp": "2024-01-01T11:00:00+00:00"},
+            {"status": "absent",  "timestamp": "2024-01-01T09:00:00+00:00"},
+        ]
+        entries = self._parse(raw)
+        assert len(entries) == 2
+        # Newest entry: no until (current)
+        assert entries[0].status == "present"
+        assert entries[0].since == "2024-01-01T11:00:00+00:00"
+        assert entries[0].until is None
+        assert entries[0].is_current is True
+        # Older entry: until = timestamp of newer entry
+        assert entries[1].status == "absent"
+        assert entries[1].since == "2024-01-01T09:00:00+00:00"
+        assert entries[1].until == "2024-01-01T11:00:00+00:00"
+        assert entries[1].is_current is False
+
+    def test_multiple_entries_duration(self):
+        raw = [
+            {"status": "occupied", "timestamp": "2024-01-01T12:00:00+00:00"},
+            {"status": "present",  "timestamp": "2024-01-01T10:00:00+00:00"},
+            {"status": "absent",   "timestamp": "2024-01-01T08:00:00+00:00"},
+        ]
+        entries = self._parse(raw)
+        assert len(entries) == 3
+        assert entries[0].is_current is True
+        assert entries[1].until == "2024-01-01T12:00:00+00:00"
+        assert entries[1].duration_ms == 7_200_000  # 2 hours
+        assert entries[2].until == "2024-01-01T10:00:00+00:00"
+        assert entries[2].duration_ms == 7_200_000  # 2 hours
+

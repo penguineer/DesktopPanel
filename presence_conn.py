@@ -221,6 +221,12 @@ class PresenceSvcCfg(object):
     def post_endpoint(self):
         return self._svc_endpoint("presence/" + self._handle)
 
+    def history_endpoint(self, count=None):
+        url = self._svc_endpoint("history")
+        if count is not None:
+            url += "?count=" + str(count)
+        return url
+
     def _svc_endpoint(self, endpoint):
         return self._svc + "/" + endpoint
 
@@ -348,6 +354,58 @@ class PingTechPresenceReceiver(Widget):
         self.active_presence = None
         self.presence_list = []
         Logger.error("Presence: Error while fetching presence: " + error)
+
+
+class PresenceHistoryFetcher(Widget):
+    """Fetches presence history from the service on demand.
+
+    Call ``fetch_history()`` to trigger an asynchronous request to the
+    ``/history`` endpoint. When the response arrives, ``tracked_entries`` is
+    updated with the parsed :class:`PresenceTrackedEntry` list in reverse
+    chronological order (newest first), matching the layout expected by
+    :class:`PresenceHistoryList`.
+    """
+
+    svc_conf = ObjectProperty(None, allownone=True)
+    count = NumericProperty(None, allownone=True)
+    tracked_entries = ListProperty()
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def fetch_history(self):
+        if self.svc_conf is None:
+            return
+
+        count = self.count if self.count else None
+        url = self.svc_conf.history_endpoint(count=count)
+
+        UrlRequest(
+            url=url,
+            req_headers=self.svc_conf.auth_headers(),
+            on_success=self._on_history_json,
+            on_failure=self._on_failure,
+            on_error=self._on_error,
+            timeout=10
+        )
+
+    def _on_history_json(self, _request, history_json):
+        raw_entries = history_json.get('entries', [])
+        entries = []
+        for i, e in enumerate(raw_entries):
+            status = e.get("status", None)
+            since = e.get("timestamp", None)
+            # Entries are in reverse chronological order; entry[i]'s end time
+            # is the start time of the more recent entry[i-1].
+            until = raw_entries[i - 1].get("timestamp", None) if i > 0 else None
+            entries.append(PresenceTrackedEntry(status=status, since=since, until=until))
+        self.tracked_entries = entries
+
+    def _on_failure(self, _request, result):
+        Logger.error("Presence: Error fetching history (HTTP failure): %s", str(result))
+
+    def _on_error(self, _request, error):
+        Logger.error("Presence: Error fetching history (network error): %s", str(error))
 
 
 class PresenceChangeHandler(PresencePublisher):
