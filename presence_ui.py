@@ -274,18 +274,25 @@ class PresenceHistoryItem(RelativeLayout):
 
 
 Builder.load_string("""
-<PresenceHistoryList>:
-    ScrollView:
-        size_hint: 1, 1
-        do_scroll_x: False
+#:import ScrollableList scrollable_list.ScrollableList
 
-        BoxLayout:
-            id: history_box
-            orientation: 'vertical'
-            spacing: 4
-            padding: [0, 4]
-            size_hint_y: None
-            height: self.minimum_height
+<PresenceHistoryList>:
+    ScrollableList:
+        id: scroll_list
+        size_hint: 1, 1
+
+        ScrollView:
+            id: sv
+            size_hint: 1, 1
+            do_scroll_x: False
+
+            BoxLayout:
+                id: history_box
+                orientation: 'vertical'
+                spacing: 4
+                padding: [0, 4]
+                size_hint_y: None
+                height: self.minimum_height
 """)
 
 
@@ -297,6 +304,10 @@ class PresenceHistoryList(RelativeLayout):
 
         self.bind(tracked_entries=self._on_tracked_entries)
 
+    def on_kv_post(self, base_widget):
+        """Bind scroll-position tracking after KV rules are applied."""
+        self.ids.scroll_list.bind_scroll_view(self.ids.sv)
+
     def _on_tracked_entries(self, _instance, entries):
         if 'history_box' not in self.ids:
             return
@@ -307,6 +318,12 @@ class PresenceHistoryList(RelativeLayout):
             item = PresenceHistoryItem()
             item.tracked_entry = entry
             self.ids.history_box.add_widget(item)
+
+        # Update scroll indicators after content changes.  The guard is
+        # needed because this callback can fire before on_kv_post when
+        # tracked_entries is assigned during widget construction.
+        if 'scroll_list' in self.ids and 'sv' in self.ids:
+            Clock.schedule_once(lambda dt: self.ids.scroll_list.update_indicators(self.ids.sv))
 
 
 Builder.load_string("""

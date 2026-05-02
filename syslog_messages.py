@@ -7,8 +7,10 @@ from typing import Optional
 from kivy import Logger
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import StringProperty, ListProperty, ColorProperty, NumericProperty, ObjectProperty, BooleanProperty
+from kivy.properties import StringProperty, ListProperty, ColorProperty, NumericProperty, ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
+
+from scrollable_list import ScrollableList  # noqa: F401 - ScrollableList used in KV
 
 
 class Colors:
@@ -205,6 +207,7 @@ class SyslogMessage(object):
 Builder.load_string("""
 #:import _ENTRY_MIN_HEIGHT syslog_messages._ENTRY_MIN_HEIGHT
 #:import _ENTRY_LINE_HEIGHT syslog_messages._ENTRY_LINE_HEIGHT
+#:import ScrollableList scrollable_list.ScrollableList
 <SyslogEntry>:
     orientation: 'vertical'
     size_hint: 1, None
@@ -282,9 +285,10 @@ Builder.load_string("""
                 root.pos[0] + root.size[0] - 2, root.pos[1] + 4, \\ 
                 root.pos[0] + root.size[0] - 2, root.pos[1] + root.size[1] - 12
 
-    # FloatLayout lets the scroll indicators float over the list without
-    # consuming any vertical space of their own.
-    FloatLayout:
+    # ScrollableList overlays ▲/▼ arrows on the RecycleView without consuming
+    # any vertical space of their own.
+    ScrollableList:
+        id: scroll_list
         size_hint: 1, 1
 
         RecycleView:
@@ -300,32 +304,6 @@ Builder.load_string("""
                 default_size_hint: 1, None
                 size_hint_y: None
                 height: self.minimum_height
-
-        # ▲ overlaid at the very top of the list
-        Label:
-            text: '▲'
-            font_size: 12
-            font_name: 'assets/FiraMono-Regular.ttf'
-            color: 77/256.0, 77/256.0, 76/256.0, 1
-            halign: 'center'
-            valign: 'center'
-            size_hint: 1, None
-            height: 14
-            pos_hint: {'top': 1}
-            opacity: 1 if root._has_more_above else 0
-
-        # ▼ overlaid at the very bottom of the list
-        Label:
-            text: '▼'
-            font_size: 12
-            font_name: 'assets/FiraMono-Regular.ttf'
-            color: 77/256.0, 77/256.0, 76/256.0, 1
-            halign: 'center'
-            valign: 'center'
-            size_hint: 1, None
-            height: 14
-            pos_hint: {'y': 0}
-            opacity: 1 if root._has_more_below else 0
 """)
 
 
@@ -383,10 +361,6 @@ class SyslogMessagePanel(BoxLayout):
     amqp_queue = StringProperty('')
     message_callback = ObjectProperty(None, allownone=True)
 
-    # Scroll position indicators (updated after each refresh and on scroll)
-    _has_more_above = BooleanProperty(False)
-    _has_more_below = BooleanProperty(False)
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -401,17 +375,7 @@ class SyslogMessagePanel(BoxLayout):
 
     def on_kv_post(self, base_widget):
         """Bind scroll-position tracking after KV rules are applied."""
-        self.ids.rv.bind(scroll_y=self._on_rv_scroll)
-
-    def _on_rv_scroll(self, rv, scroll_y):
-        """Update the ▲/▼ scroll indicator visibility on every scroll event."""
-        try:
-            content_height = rv.layout_manager.height
-            has_overflow = content_height > rv.height
-        except Exception:
-            has_overflow = False
-        self._has_more_above = has_overflow and scroll_y < 0.999
-        self._has_more_below = has_overflow and scroll_y > 0.001
+        self.ids.scroll_list.bind_scroll_view(self.ids.rv)
 
     def on_amqp_widget(self, _instance, _value):
         """Subscribe to the AMQP queue when the widget becomes available."""
@@ -519,4 +483,4 @@ class SyslogMessagePanel(BoxLayout):
         """Refresh the RecycleView data and update scroll indicators."""
         rv = self.ids.rv
         rv.refresh_from_data()
-        self._on_rv_scroll(rv, rv.scroll_y)
+        self.ids.scroll_list.update_indicators(rv)
