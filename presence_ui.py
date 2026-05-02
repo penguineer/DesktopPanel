@@ -285,6 +285,7 @@ Builder.load_string("""
             id: sv
             size_hint: 1, 1
             do_scroll_x: False
+            bar_width: 0
 
             BoxLayout:
                 id: history_box
@@ -791,6 +792,20 @@ class PresenceTrayWidget(RelativeLayout):
 
         self.pr_sel = None
 
+    def on_kv_post(self, base_widget):
+        """Bind history fetcher so it seeds the tracker when no session data exists."""
+        self.ids.history_fetcher.bind(tracked_entries=self._seed_tracker_from_history)
+
+    def _seed_tracker_from_history(self, _instance, entries):
+        """Populate the tracker with historical entries if no session data exists yet.
+
+        Called when the background history fetch completes.  If the user has
+        already recorded entries during this session the tracker is left
+        untouched, preserving the most up-to-date local state.
+        """
+        if not self.ids.presence_tracker.tracked_entries:
+            self.ids.presence_tracker.tracked_entries = entries
+
     def popup_handler(self, _cmd=None, _args=None):
         Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
 
@@ -815,8 +830,8 @@ class PresenceTrayWidget(RelativeLayout):
             self.pr_sel.presence_list = self.presence_list
             self.bind(presence_list=self.pr_sel.setter('presence_list'))
 
-            self.pr_sel.tracked_entries = self.ids.history_fetcher.tracked_entries
-            self.ids.history_fetcher.bind(tracked_entries=self.pr_sel.setter('tracked_entries'))
+            self.pr_sel.tracked_entries = self.ids.presence_tracker.tracked_entries
+            self.ids.presence_tracker.bind(tracked_entries=self.pr_sel.setter('tracked_entries'))
 
             self.pr_sel.requested_status = self.ids.change_handler.requested_status
             self.ids.change_handler.bind(requested_status=self.pr_sel.setter('requested_status'))

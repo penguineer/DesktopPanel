@@ -162,6 +162,61 @@ class TestPresenceTracker:
         # since should be a non-empty ISO string (current time used as fallback)
         assert tracker.tracked_entries[0].since
 
+    def test_optimistic_entry_added_immediately_on_request(self):
+        """When requested_status is set, an optimistic entry appears right away."""
+        tracker = _PresenceTrackerLogic()
+        tracker.update(self._make_presence("present", "2024-01-01T10:00:00+00:00"))
+
+        tracker.set_requested("absent")
+
+        # Two entries immediately — no server update yet
+        assert len(tracker.tracked_entries) == 2
+        assert tracker.tracked_entries[0].status == "absent"
+        assert tracker.tracked_entries[0].is_current is True
+        assert tracker.tracked_entries[0].since  # non-empty local timestamp
+        assert tracker.tracked_entries[1].status == "present"
+        assert tracker.tracked_entries[1].is_current is False
+
+    def test_optimistic_entry_replaced_on_server_confirm(self):
+        """Server-confirmed timestamps replace the local optimistic ones."""
+        tracker = _PresenceTrackerLogic()
+        tracker.update(self._make_presence("present", "2024-01-01T10:00:00+00:00"))
+
+        tracker.set_requested("absent")  # optimistic entry created locally
+
+        # Server confirms with an authoritative timestamp
+        tracker.update(self._make_presence("absent", "2024-01-01T10:05:00+00:00"))
+
+        assert len(tracker.tracked_entries) == 2
+        # Optimistic since replaced by server timestamp
+        assert tracker.tracked_entries[0].status == "absent"
+        assert tracker.tracked_entries[0].since == "2024-01-01T10:05:00+00:00"
+        assert tracker.tracked_entries[0].is_current is True
+        # Previous entry's until corrected to server timestamp
+        assert tracker.tracked_entries[1].status == "present"
+        assert tracker.tracked_entries[1].until == "2024-01-01T10:05:00+00:00"
+
+    def test_optimistic_entry_no_duplicate_on_polling_after_confirm(self):
+        """After the server confirms an optimistic entry, polling does not add more."""
+        tracker = _PresenceTrackerLogic()
+        tracker.update(self._make_presence("present", "2024-01-01T10:00:00+00:00"))
+
+        tracker.set_requested("absent")
+        tracker.update(self._make_presence("absent", "2024-01-01T10:05:00+00:00"))
+        # Subsequent polling with the same status — should be a no-op
+        tracker.update(self._make_presence("absent", "2024-01-01T10:10:00+00:00"))
+
+        assert len(tracker.tracked_entries) == 2
+
+    def test_optimistic_entry_from_empty(self):
+        """Optimistic update works even when the tracker has no prior entries."""
+        tracker = _PresenceTrackerLogic()
+        tracker.set_requested("present")
+
+        assert len(tracker.tracked_entries) == 1
+        assert tracker.tracked_entries[0].status == "present"
+        assert tracker.tracked_entries[0].is_current is True
+
 
 class _PresenceTrackerLogic:
     """Pure-Python stub that reproduces PresenceTracker logic without Kivy."""
@@ -170,11 +225,29 @@ class _PresenceTrackerLogic:
         self.tracked_entries = []
         self._last_status = None
         self._force_next_status = None
+        self._optimistic = False
 
     def set_requested(self, status):
-        """Simulate setting requested_status (latches force flag like on_requested_status)."""
+        """Simulate setting requested_status (mirrors on_requested_status behaviour,
+        including the immediate optimistic entry creation)."""
         if status is not None:
             self._force_next_status = status
+
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            new_entries = list(self.tracked_entries)
+
+            if new_entries and new_entries[0].is_current:
+                entry = new_entries[0]
+                new_entries[0] = PresenceTrackedEntry(
+                    status=entry.status,
+                    since=entry.since,
+                    until=now
+                )
+
+            new_entries.insert(0, PresenceTrackedEntry(status=status, since=now))
+            self.tracked_entries = new_entries
+            self._last_status = status
+            self._optimistic = True
 
     def update(self, value):
         if value is None:
@@ -193,6 +266,25 @@ class _PresenceTrackerLogic:
             datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         new_entries = list(self.tracked_entries)
+
+        if (self._optimistic and is_explicit
+                and new_entries
+                and new_entries[0].is_current
+                and new_entries[0].status == value.status):
+            new_entries[0] = PresenceTrackedEntry(status=value.status, since=since)
+            if len(new_entries) > 1:
+                prev = new_entries[1]
+                new_entries[1] = PresenceTrackedEntry(
+                    status=prev.status,
+                    since=prev.since,
+                    until=since
+                )
+            self._optimistic = False
+            self.tracked_entries = new_entries
+            self._last_status = value.status
+            return
+
+        self._optimistic = False
 
         if new_entries and new_entries[0].is_current:
             entry = new_entries[0]

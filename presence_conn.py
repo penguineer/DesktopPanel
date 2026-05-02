@@ -112,13 +112,38 @@ class PresenceTracker(Widget):
 
         self._last_status = None
         self._force_next_status = None
+        self._optimistic = False
         self.bind(active_presence=self._on_active_presence)
 
     def on_requested_status(self, _instance, value):
-        """Latch an explicit user request so that the next matching status update
-        bypasses the deduplication guard. The latch is consumed after one use."""
+        """Latch an explicit user request and add an optimistic entry immediately.
+
+        The optimistic entry gives the user instant visual feedback before the
+        server has confirmed the new status.  The latch (``_force_next_status``)
+        is consumed by the first matching ``_on_active_presence`` callback, which
+        also replaces the optimistic timestamps with the server-confirmed ones.
+        """
         if value is not None:
             self._force_next_status = value
+
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            new_entries = list(self.tracked_entries)
+
+            # Close the current entry optimistically
+            if new_entries and new_entries[0].is_current:
+                entry = new_entries[0]
+                new_entries[0] = PresenceTrackedEntry(
+                    status=entry.status,
+                    since=entry.since,
+                    until=now
+                )
+
+            # Prepend optimistic new entry
+            new_entries.insert(0, PresenceTrackedEntry(status=value, since=now))
+
+            self.tracked_entries = new_entries
+            self._last_status = value
+            self._optimistic = True
 
     def _on_active_presence(self, _instance, value):
         if value is None:
@@ -140,6 +165,28 @@ class PresenceTracker(Widget):
             datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         new_entries = list(self.tracked_entries)
+
+        # If an optimistic entry for this status is already at the top, replace
+        # its local timestamp with the server-confirmed one and correct the
+        # previous entry's until timestamp to match.
+        if (self._optimistic and is_explicit
+                and new_entries
+                and new_entries[0].is_current
+                and new_entries[0].status == value.status):
+            new_entries[0] = PresenceTrackedEntry(status=value.status, since=since)
+            if len(new_entries) > 1:
+                prev = new_entries[1]
+                new_entries[1] = PresenceTrackedEntry(
+                    status=prev.status,
+                    since=prev.since,
+                    until=since
+                )
+            self._optimistic = False
+            self.tracked_entries = new_entries
+            self._last_status = value.status
+            return
+
+        self._optimistic = False
 
         # Close the previous current entry by recording its end time
         if new_entries and new_entries[0].is_current:
