@@ -14,7 +14,7 @@ Builder.load_string("""
             pos: self.pos
             size: self.size
 
-    canvas:
+    canvas.after:
         #:set button_radius 5
         Color:
             rgba: root.border_color
@@ -138,11 +138,12 @@ class FullscreenTimedModal(ModalView):
         if self.screensaver:
             self.screensaver.disabled = True
 
-        # Force a full canvas redraw on the next frame so that any stencil
-        # state left by ScrollView/RecycleView on the active page is cleared
-        # before the dialog's children paint themselves.
-        # Walk all widgets so that child canvases (CloseBtn, Title) added by
-        # the FullscreenTimedModal KV rule are also marked dirty.
+        # Force a full canvas redraw on the next frame.  The frame border lines
+        # are drawn in canvas.after, which executes after all children have
+        # finished rendering (including any StencilView push/pop cycles from
+        # ScrollView/RecycleView widgets on the active page), guaranteeing a
+        # clean GL state for the border.  Marking every widget dirty ensures
+        # all sub-canvases are repainted in that same frame.
         def _force_redraw(dt):
             for w in self.walk():
                 w.canvas.ask_update()
