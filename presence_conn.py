@@ -145,6 +145,12 @@ class PresenceTracker(Widget):
             self._last_status = value
             self._optimistic = True
 
+    @property
+    def has_optimistic_entry(self):
+        """True when the most-recent tracked entry was created locally (optimistic)
+        and has not yet been confirmed by a server-side ``active_presence`` update."""
+        return self._optimistic
+
     def _on_active_presence(self, _instance, value):
         if value is None:
             return
