@@ -5,11 +5,11 @@ import datetime
 import dateutil.parser
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import BooleanProperty, ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty
+from kivy.properties import BooleanProperty, ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty, NumericProperty
 from kivy.uix.relativelayout import RelativeLayout
 
 from dlg import FullscreenTimedModal
-from presence_conn import PresenceSvcCfg, PresenceTracker  # noqa: F401 - PresenceTracker used in KV
+from presence_conn import PresenceSvcCfg, PresenceTracker, PresenceHistoryFetcher  # noqa: F401 - PresenceTracker, PresenceHistoryFetcher used in KV
 
 
 class Contact(object):
@@ -673,6 +673,7 @@ Builder.load_string("""
 #:import PingTechPresenceReceiver presence_conn.PingTechPresenceReceiver
 #:import PresenceChangeHandler presence_conn.PresenceChangeHandler
 #:import PresenceTracker presence_conn.PresenceTracker
+#:import PresenceHistoryFetcher presence_conn.PresenceHistoryFetcher
 
 <PresenceTrayWidget>:
     presence_list: presence_receiver.presence_list
@@ -727,6 +728,11 @@ Builder.load_string("""
         id: presence_tracker
         active_presence: presence_receiver.active_presence
         requested_status: change_handler.requested_status
+
+    PresenceHistoryFetcher:
+        id: history_fetcher
+        svc_conf: root.presence_svc_cfg
+        count: root.history_count
 """)
 
 
@@ -743,6 +749,8 @@ class PresenceTrayWidget(RelativeLayout):
     handle_others = ListProperty()
     contacts = DictProperty()
     presence_list = ListProperty()
+
+    history_count = NumericProperty(None, allownone=True)
 
     screensaver_disabled_states = ListProperty([])
 
@@ -790,8 +798,8 @@ class PresenceTrayWidget(RelativeLayout):
             self.pr_sel.presence_list = self.presence_list
             self.bind(presence_list=self.pr_sel.setter('presence_list'))
 
-            self.pr_sel.tracked_entries = self.ids.presence_tracker.tracked_entries
-            self.ids.presence_tracker.bind(tracked_entries=self.pr_sel.setter('tracked_entries'))
+            self.pr_sel.tracked_entries = self.ids.history_fetcher.tracked_entries
+            self.ids.history_fetcher.bind(tracked_entries=self.pr_sel.setter('tracked_entries'))
 
             self.pr_sel.requested_status = self.ids.change_handler.requested_status
             self.ids.change_handler.bind(requested_status=self.pr_sel.setter('requested_status'))
@@ -803,6 +811,10 @@ class PresenceTrayWidget(RelativeLayout):
             self.pr_sel.bind(requested_status=self.ids.change_handler.setter('requested_status'))
 
             self.pr_sel.open()
+
+            # Lazily fetch history after the dialog is open so it does not
+            # delay the dialog from appearing and being usable.
+            Clock.schedule_once(lambda dt: self.ids.history_fetcher.fetch_history())
         else:
             self.pr_sel.dismiss()
             self.pr_sel = None
@@ -840,6 +852,7 @@ class PresenceTrayWidget(RelativeLayout):
             self.presence_updater = None
             self.presence_emitter = None
             self.screensaver_disabled_states = []
+            self.history_count = None
             return
 
         self.handle_self = self.conf.get('self', None)
@@ -863,6 +876,8 @@ class PresenceTrayWidget(RelativeLayout):
             handle=self.conf['self'],
             token=self.conf['token']
         )
+
+        self.history_count = self.conf.get("history-count", None)
 
         Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
 
