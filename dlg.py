@@ -1,3 +1,4 @@
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import ColorProperty, StringProperty, ObjectProperty
 from kivy.uix.modalview import ModalView
@@ -87,6 +88,10 @@ Builder.load_string("""
 
 
 class FullscreenTimedModal(ModalView):
+    # Suppress the default ModalView BorderImage background, which can interfere
+    # with the stencil buffer operations used by ScrollView children.
+    background = ''
+
     background_color = ColorProperty([0, 0, 0, 1])
     """Background color, in the format (r, g, b, a).
 
@@ -132,6 +137,11 @@ class FullscreenTimedModal(ModalView):
     def _on_open(self, _e):
         if self.screensaver:
             self.screensaver.disabled = True
+
+        # Force a full canvas redraw on the next frame so that any stencil
+        # state left by ScrollView/RecycleView on the active page is cleared
+        # before the dialog's children paint themselves.
+        Clock.schedule_once(lambda dt: self.canvas.ask_update(), 0)
 
     def _on_dismiss(self, _e):
         if self.screensaver:

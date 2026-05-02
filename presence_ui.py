@@ -627,6 +627,17 @@ Builder.load_string("""
     title: "Presence"
 
     AnchorLayout:
+        anchor_x: 'left'
+        anchor_y: 'top'
+
+        padding: [8, 70 + 20, 8, 8+20]
+
+        PresenceHistoryList:
+            size: 350, 400
+            size_hint: None, 1
+            tracked_entries: root.tracked_entries
+
+    AnchorLayout:
         anchor_x: 'right'
         anchor_y: 'bottom'
 
@@ -638,17 +649,6 @@ Builder.load_string("""
             active_status: root.active_presence.status if root.active_presence else "unknown"
             requested_status: root.requested_status
             request_callback: root.request_callback
-
-    AnchorLayout:
-        anchor_x: 'left'
-        anchor_y: 'top'
-
-        padding: [8, 70 + 20, 8, 8+20]
-
-        PresenceHistoryList:
-            size: 350, 400
-            size_hint: None, 1
-            tracked_entries: root.tracked_entries
 """)
 
 
