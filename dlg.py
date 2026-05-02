@@ -52,6 +52,7 @@ Builder.load_string("""
             cap: 'none'
     
     AnchorLayout:
+        id: close_btn_anchor
         anchor_x: 'right'
         anchor_y: 'top'
         padding: 4
@@ -74,6 +75,7 @@ Builder.load_string("""
                 color: root.text_color
 
     AnchorLayout:
+        id: title_anchor
         anchor_x: 'center'
         anchor_y: 'top'
         padding: -20
@@ -130,6 +132,27 @@ class FullscreenTimedModal(ModalView):
 
         if title is not None:
             self.title = title
+
+    def on_kv_post(self, base_widget):
+        """Re-order title and close button so they render after all content.
+
+        Kivy's StencilView (used by ScrollView/RecycleView) pushes and pops
+        the GL stencil buffer.  Texture-based rendering (Label glyphs, Image
+        textures) that happens *before* a StencilView render cycle can be
+        invisible when the dialog is opened over pages that contain
+        RecycleView/ScrollView widgets.  Moving the title and close-button
+        anchors to the top of the children stack (last rendered = on top of
+        Z-order) ensures they paint *after* any StencilView operations, where
+        the GL state is reliably clean.
+        """
+        close_anchor = self.ids.close_btn_anchor
+        title_anchor = self.ids.title_anchor
+        self.remove_widget(close_anchor)
+        self.remove_widget(title_anchor)
+        # Re-add at the top of the Z-order: title on top, close button just below.
+        # add_widget() with default index=0 inserts at children[0] (last rendered = topmost).
+        self.add_widget(title_anchor)           # children[0] – rendered last = topmost layer
+        self.add_widget(close_anchor, index=1)  # children[1] – rendered second-to-last
 
     def is_inactive(self):
         return self._window is None
