@@ -284,6 +284,63 @@ Group each section with a blank line between them.
 
 ---
 
+## Kivy GL Stencil Rendering Constraint
+
+**Background:** Every `ScrollView` and `RecycleView` is a `StencilView` internally.
+`StencilView` uses OpenGL stencil buffer operations (push, use, unuse, pop) to clip
+its content.  These operations leave the GL pipeline in a state where any
+**texture-based rendering** — `Label` glyphs and `Image` textures — that was issued
+**before** the stencil cycle in the same frame is **invisible** on screen.
+Geometry-only instructions (`Line`, `Rectangle`, `Ellipse`, `RoundedRectangle`)
+are unaffected and always draw correctly.
+
+This is the root cause of the recurring "Presence Dialog invisible on System/GTD
+pages" bugs: those pages contain `RecycleView`/`ScrollView` widgets that are still
+on-screen when the dialog opens.  The HOME page has no scroll views, so the dialog
+always appeared correctly there.
+
+**Rules for placing UI elements:**
+
+1. **Texture-based widgets (Label, Image, AsyncImage) that must be visible must
+   render *after* any StencilView sibling in the same widget tree.**
+   In Kivy, the last item in a layout's `children` list renders on top / last.
+   `add_widget()` with the default `index=0` inserts at `children[0]` (last
+   rendered). Widgets added by KV rules render in KV source order, which becomes
+   the *reverse* of `children` order.
+
+2. **Frame decorations, titles, and overlay elements in `FullscreenTimedModal`
+   subclasses are re-ordered in `on_kv_post()`** (see `dlg.py`).  The title and
+   close-button `AnchorLayout` containers carry the ids `title_anchor` and
+   `close_btn_anchor` precisely so that `on_kv_post` can remove and re-insert them
+   at the top of the stack *after* the dialog's content children (which may include
+   `ScrollView`/`RecycleView`).  **Do not change the ids or remove the `on_kv_post`
+   call without understanding this constraint.**
+
+3. **Scroll-indicator arrows in `ScrollableList`** are raised to the top of the
+   children stack by `_raise_arrows()`, which is called automatically from
+   `bind_scroll_view()`.  This ensures the `▲`/`▼` `Label` widgets render after
+   the wrapped `ScrollView`/`RecycleView`.  Any new overlay widget added on top of
+   a `ScrollableList` must also be re-ordered after `bind_scroll_view()` is called.
+
+4. **When adding a new overlay widget** (e.g. a status badge, tooltip, or floating
+   button) on top of a container that includes a `ScrollView` or `RecycleView`,
+   always insert the overlay widget *after* the scroll view in the render order.
+   The safe pattern is:
+
+   ```python
+   def on_kv_post(self, base_widget):
+       overlay = self.ids.my_overlay
+       self.remove_widget(overlay)
+       self.add_widget(overlay)  # re-inserts at children[0] = rendered last = on top
+   ```
+
+5. **`canvas.after` is reliable.** Pure-geometry decorations (border lines, divider
+   lines) drawn in `canvas.after` always execute after all children finish
+   rendering — including all stencil push/pop cycles — so they are safe to use
+   unconditionally for frame borders and similar decorations (see `dlg.py`).
+
+---
+
 ## Pages
 
 New pages follow this minimal pattern:

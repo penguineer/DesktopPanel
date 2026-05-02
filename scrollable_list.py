@@ -72,6 +72,27 @@ class ScrollableList(FloatLayout):
                    indicator visibility.
         """
         sv.bind(scroll_y=self._on_scroll)
+        # Raise the scroll-indicator arrows to the top of the children stack
+        # so they render *after* the StencilView (ScrollView/RecycleView).
+        # This guarantees the GL stencil state is clean when the arrow Labels
+        # are drawn, preventing them from being invisible when the dialog is
+        # opened over pages that contain other RecycleView/ScrollView widgets.
+        self._raise_arrows()
+
+    def _raise_arrows(self):
+        """Re-order scroll indicator labels to render on top of the scroll view.
+
+        Removes and re-adds the ▲/▼ labels so that they are the last children
+        rendered (children[0] and children[1] in Kivy's stack), placing them
+        visually above the scroll content and ensuring they paint after any
+        StencilView push/pop cycle.
+        """
+        # Take a snapshot before removing (remove_widget mutates self.children).
+        arrows = [c for c in list(self.children) if getattr(c, 'text', '') in ('▲', '▼')]
+        for arrow in arrows:
+            self.remove_widget(arrow)
+        for arrow in arrows:
+            self.add_widget(arrow)
 
     def _on_scroll(self, sv, scroll_y):
         """Update ▲/▼ indicator visibility on every scroll event."""
