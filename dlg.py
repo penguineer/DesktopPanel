@@ -141,7 +141,12 @@ class FullscreenTimedModal(ModalView):
         # Force a full canvas redraw on the next frame so that any stencil
         # state left by ScrollView/RecycleView on the active page is cleared
         # before the dialog's children paint themselves.
-        Clock.schedule_once(lambda dt: self.canvas.ask_update(), 0)
+        # Walk all widgets so that child canvases (CloseBtn, Title) added by
+        # the FullscreenTimedModal KV rule are also marked dirty.
+        def _force_redraw(dt):
+            for w in self.walk():
+                w.canvas.ask_update()
+        Clock.schedule_once(_force_redraw, 0)
 
     def _on_dismiss(self, _e):
         if self.screensaver:
