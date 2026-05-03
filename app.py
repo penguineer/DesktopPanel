@@ -15,8 +15,11 @@ import mqtt
 import globalcontent
 from page_gtd import GtdPage
 from page_home import HomePage
+from page_presence import PresencePage, PresenceTrayWidget
+from spacestatus import SpaceStatusWidget
 from page_system import SystemPage
 from reloadable_json import JsonObserver
+from datetime_display import DateTimeDisplay
 
 from kivy import Logger
 from kivy.config import Config
@@ -52,6 +55,7 @@ class TabbedPanelApp(App):
         self.ca = None
         self.config_obs = None
         self.amqp_widget = None
+        self.presence_tray = None
 
         self.bind(conf_path=self._on_conf_path)
         self.bind(conf=self._on_conf)
@@ -106,19 +110,39 @@ class TabbedPanelApp(App):
         self.mqttc = mqtt.MqttClient()
         self.mqttc.conf = self.conf
         ca.mqttc = self.mqttc
-        ca.status_bar.tray_bar.register_widget(self.mqttc)
+        ca.register_tray_item(self.mqttc)
 
         self.amqp_widget = amqp.AmqpWidget()
         self.amqp_widget.conf = self.conf.get("amqp", None) if self.conf else None
         self.amqp_widget.add_command_handler("test", command_log)
         self.amqp_widget.add_command_handler("screenshot", command_screenshot)
-        self.amqp_widget.add_command_handler("presence popup", self.schedule_popup_presence_dlg)
-        ca.status_bar.tray_bar.register_widget(self.amqp_widget)
+        self.amqp_widget.add_command_handler("show page", self._schedule_show_page)
+        ca.register_tray_item(self.amqp_widget)
 
         system_page.amqp_widget = self.amqp_widget
 
+        ca.register_status_item(DateTimeDisplay())
+
+        self.presence_tray = PresenceTrayWidget()
+        ca.register_status_item(
+            self.presence_tray,
+            conf_lambda=lambda conf: conf.get("presence", None))
+
+        spacestatus = SpaceStatusWidget()
+        ca.register_status_item(
+            spacestatus,
+            conf_lambda=lambda conf: conf.get("spaceApi", None))
+
+        presence_page = PresencePage()
+        Clock.schedule_once(lambda dt: self._register_presence_page(ca, presence_page))
+
         self.ca = ca
         return ca
+
+    def _register_presence_page(self, ca, presence_page):
+        """Wire the PresencePage to the PresenceTrayWidget and register it with the router."""
+        self.presence_tray.register_presence_page(presence_page)
+        ca.register_border_button(self.presence_tray, presence_page)
 
     def on_stop(self):
         if self.config_obs is not None:
@@ -129,12 +153,10 @@ class TabbedPanelApp(App):
     def select(self, index):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
 
-    def popup_presence_dlg(self):
-        if self.ca:
-            self.ca.status_bar.ids.presence.popup_handler()
-
-    def schedule_popup_presence_dlg(self, _cmd, _args):
-        Clock.schedule_once(lambda dt: self.popup_presence_dlg())
+    def _schedule_show_page(self, _cmd, args):
+        handle = args.get("page", None)
+        if handle:
+            Clock.schedule_once(lambda dt: self.ca.router.switch_to(handle))
 
     def schedule_update_configuration(self, conf):
         Clock.schedule_once(lambda dt: self.setter('conf')(self, conf))

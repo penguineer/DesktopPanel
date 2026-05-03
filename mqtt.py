@@ -6,7 +6,7 @@ from kivy import Logger
 from kivy.lang import Builder
 from kivy.properties import ObjectProperty, StringProperty
 
-from statusbar import TrayIcon
+from tray_icon import TrayIcon
 
 Builder.load_string("""
 <MqttClient>:

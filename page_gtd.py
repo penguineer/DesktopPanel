@@ -8,7 +8,7 @@ Builder.load_string("""
 #:import IssueList issues.IssueList
 
 <GtdPage>:
-    label: 'system'
+    label: 'gtd'
     icon: 'assets/icon_gtd.png'
 
     BoxLayout:

@@ -14,7 +14,7 @@ from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import DictProperty
 
-from statusbar import TrayIcon
+from tray_icon import TrayIcon
 
 
 class AmqpAccessConfiguration(object):

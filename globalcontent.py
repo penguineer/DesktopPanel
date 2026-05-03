@@ -11,6 +11,86 @@ from kivy.uix.button import Button
 from kivy.animation import Animation
 
 
+class PageRouter(object):
+    """Routes page navigation by string handle.
+
+    Pages are identified by their ``label`` string (the handle).  Left-border
+    pages get a :class:`ContextButton`; tray-area widgets can also be wired
+    to a page via :meth:`register_border_button`.  Navigation history is
+    recorded for a future "jump back" feature.
+    """
+
+    def __init__(self, content_panel, tab_height, context_buttons_panel, on_page_changed=None):
+        self._content_panel = content_panel
+        self._tab_height = tab_height
+        self._context_buttons_panel = context_buttons_panel
+        self._on_page_changed = on_page_changed
+
+        self._pages_by_handle = {}
+        self._current_page = None
+        self._history = []
+
+    @property
+    def current_page(self):
+        return self._current_page
+
+    @property
+    def current_handle(self):
+        return self._current_page.label if self._current_page else None
+
+    def add_page(self, page):
+        """Register a page with a :class:`ContextButton` in the left border."""
+        handle = page.label
+        self._pages_by_handle[handle] = page
+
+        cbtn = page.create_context_button(length=self._tab_height)
+        cbtn.page_callback = lambda h=handle: self.switch_to(h)
+        self._context_buttons_panel.add_widget(cbtn)
+
+        if self._current_page is None:
+            self.switch_to(handle)
+
+    def register_border_button(self, widget, page=None):
+        """Register a border (tray) widget, optionally wiring it to a page."""
+        if page is not None:
+            handle = page.label
+            self._pages_by_handle[handle] = page
+            widget.page_callback = lambda h=handle: self.switch_to(h)
+
+            if self._current_page is None:
+                self.switch_to(handle)
+
+    def switch_to(self, handle: str) -> bool:
+        """Switch to the page identified by *handle*.
+
+        :returns: ``True`` if the page was found and switched to.
+        """
+        page = self._pages_by_handle.get(handle)
+        if page is None:
+            return False
+
+        if self._current_page is page:
+            return True
+
+        if self._current_page is not None:
+            self._content_panel.remove_widget(self._current_page)
+            self._current_page.active = False
+            self._history.append(self._current_page.label)
+
+        self._current_page = page
+        page.active = True
+        self._content_panel.add_widget(page)
+
+        if self._on_page_changed:
+            self._on_page_changed(page)
+
+        return True
+
+    def switch_to_page(self, page):
+        """Convenience: switch by page object rather than handle string."""
+        return self.switch_to(page.label)
+
+
 class ContentPage(RelativeLayout):
     conf_lambda = ObjectProperty(None)
     """ If this lambda is set, the conf property is determined (by a calling party, i.e. the
@@ -51,9 +131,14 @@ class ContentPage(RelativeLayout):
 
         self._btn = None
 
-    def create_context_button(self, length, cb):
+    def create_context_button(self, length):
+        """Create a :class:`ContextButton` for this page.
+
+        The returned button has no ``page_callback`` set; the caller (typically
+        :class:`PageRouter`) is responsible for wiring the callback immediately
+        after creation.
+        """
         self.btn = ContextButton(icon_path=self.icon,
-                                 on_press=cb,
                                  size=(length, length))
         return self.btn
 
@@ -120,6 +205,8 @@ class ContextButton(Button):
 
     index = NumericProperty(0)
 
+    page_callback = ObjectProperty(None, allownone=True)
+
     def __init__(self, icon_path=None, **kwargs):
         self.icon_path = icon_path
 
@@ -131,13 +218,16 @@ class ContextButton(Button):
 
         super(Button, self).__init__(**kwargs, text="")
         self.on_notify_state(self, "None")
+        self.bind(on_press=self._on_press_dispatch)
+
+    def _on_press_dispatch(self, _instance):
+        if self.page_callback and callable(self.page_callback):
+            self.page_callback()
 
 
 Builder.load_string("""
 #:import ScreenSaver screensaver.ScreenSaver
 #:import BacklightControl backlight.BacklightControl
-
-#:import StatusBar statusbar.StatusBar
 
 <GlobalContentArea>:
     anchor_y: 'top'
@@ -178,16 +268,31 @@ Builder.load_string("""
             orientation: 'vertical'
             spacing: 5
 
-            StatusBar:
-                size: [root.width - root.tab_width-4, root.status_height]
-                size_hint_x: None
+            BoxLayout:
+                id: status_area
+                orientation: 'horizontal'
                 size_hint_y: None
-                anchor_y: 'top'   
-                anchor_x: 'left'         
-                id: StatusBar
-                conf: root.conf
-                mqttc: root.mqttc
-                screensaver: root.screensaver
+                height: root.status_height
+                spacing: 10
+                padding: [10, 0]
+
+                BoxLayout:
+                    id: status_items
+                    orientation: 'horizontal'
+                    size_hint: None, 1
+                    width: self.minimum_width
+                    spacing: 10
+
+                Widget:
+                    # Spacer stretches between the two item boxes
+                    size_hint_x: 1
+
+                BoxLayout:
+                    id: tray_items
+                    orientation: 'horizontal'
+                    size_hint: None, 1
+                    width: self.minimum_width
+                    spacing: 5
     
             AnchorLayout:          
                 size: [root.width - root.tab_width-4, root.height - root.status_height - 4]
@@ -269,20 +374,33 @@ class GlobalContentArea(AnchorLayout):
 
     def __init__(self, **kwargs):
         self._pages = []
-        self._statusbar = None
+        self._status_items = []
 
         super(GlobalContentArea, self).__init__(**kwargs)
 
+        self._router = PageRouter(
+            content_panel=self.ids.ContentPanel,
+            tab_height=self.tab_height,
+            context_buttons_panel=self.ids.ContextButtons,
+            on_page_changed=lambda page: setattr(self, '_current_page', page),
+        )
+
         self.bind(conf=self._on_conf)
         self.bind(mqttc=self._on_mqttc)
+        self.bind(screensaver=self._on_screensaver)
 
         # Wake up the screensaver on every touch event
         # Blocks the event if the screen saver is active, so that the user is not poking in the dark (literally)
         Window.bind(on_touch_down=lambda i, e: self.ids.screensaver.wake_up())
 
-    def _on_conf(self, _instance, _conf: dict) -> None:
+    def _on_conf(self, _instance, conf: dict) -> None:
         for page in self._pages:
             self._page_conf(page)
+        for item in self._status_items:
+            conf_lambda = item['conf_lambda']
+            widget = item['widget']
+            if conf_lambda is not None and hasattr(widget, 'conf'):
+                widget.conf = conf_lambda(conf) if conf else None
 
     def _page_conf(self, page):
         if page and page.conf_lambda:
@@ -291,19 +409,22 @@ class GlobalContentArea(AnchorLayout):
     def _on_mqttc(self, _instance, mqttc) -> None:
         for page in self._pages:
             page.mqttc = mqttc
+        for item in self._status_items:
+            widget = item['widget']
+            if hasattr(widget, 'mqttc'):
+                widget.mqttc = mqttc
+
+    def _on_screensaver(self, _instance, screensaver) -> None:
+        for item in self._status_items:
+            widget = item['widget']
+            if hasattr(widget, 'screensaver'):
+                widget.screensaver = screensaver
 
     def set_page(self, page):
-        if self._current_page is not None:
-            self.ids.ContentPanel.remove_widget(self._current_page)
-            self._current_page.active = False
-
-        self._current_page = self._pages[page]
-
-        self._current_page.active = True
-        self.ids.ContentPanel.add_widget(self._current_page)
+        if 0 <= page < len(self._pages):
+            self._router.switch_to(self._pages[page].label)
 
     def register_content(self, page):
-        index = len(self._pages)
         self._pages.append(page)
 
         # set configuration
@@ -312,13 +433,42 @@ class GlobalContentArea(AnchorLayout):
         # set mqttc property
         page.mqttc = self.mqttc
 
-        cbtn = page.create_context_button(length=self.tab_height,
-                                          cb=lambda inst: self.set_page(index))
-        self.ids.ContextButtons.add_widget(cbtn)
+        self._router.add_page(page)
 
-        if self._current_page is None:
-            self.set_page(index)
+    def register_border_button(self, widget, page=None):
+        """Register a border (tray) widget, optionally associating it with a page.
+
+        If *page* is provided it is registered with the router so that touching
+        *widget* navigates to it.  *page* also receives the global conf/mqttc
+        updates via the standard :meth:`_on_conf` / :meth:`_on_mqttc` hooks.
+        """
+        if page is not None:
+            self._pages.append(page)
+            self._page_conf(page)
+            page.mqttc = self.mqttc
+
+        self._router.register_border_button(widget, page)
 
     @property
-    def status_bar(self):
-        return self.ids.StatusBar
+    def router(self):
+        return self._router
+
+    def _register_bar_widget(self, widget, box_id, conf_lambda=None):
+        """Add *widget* to the named status bar box and wire configuration."""
+        widget.size_hint_x = None
+        self._status_items.append({'widget': widget, 'conf_lambda': conf_lambda})
+        self.ids[box_id].add_widget(widget)
+        if conf_lambda is not None and hasattr(widget, 'conf'):
+            widget.conf = conf_lambda(self.conf) if self.conf else None
+        if hasattr(widget, 'mqttc'):
+            widget.mqttc = self.mqttc
+        if hasattr(widget, 'screensaver'):
+            widget.screensaver = self.screensaver
+
+    def register_status_item(self, widget, conf_lambda=None):
+        """Register a widget in the left status bar area (grows left-to-right)."""
+        self._register_bar_widget(widget, 'status_items', conf_lambda)
+
+    def register_tray_item(self, widget, conf_lambda=None):
+        """Register a widget in the right tray area (grows left-to-right)."""
+        self._register_bar_widget(widget, 'tray_items', conf_lambda)
