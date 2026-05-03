@@ -19,6 +19,7 @@ from page_presence import PresencePage, PresenceTrayWidget
 from spacestatus import SpaceStatusWidget
 from page_system import SystemPage
 from reloadable_json import JsonObserver
+from statusbar import DateTimeDisplay
 
 from kivy import Logger
 from kivy.config import Config
@@ -109,24 +110,26 @@ class TabbedPanelApp(App):
         self.mqttc = mqtt.MqttClient()
         self.mqttc.conf = self.conf
         ca.mqttc = self.mqttc
-        ca.status_bar.register_tray_item(self.mqttc)
+        ca.register_tray_item(self.mqttc)
 
         self.amqp_widget = amqp.AmqpWidget()
         self.amqp_widget.conf = self.conf.get("amqp", None) if self.conf else None
         self.amqp_widget.add_command_handler("test", command_log)
         self.amqp_widget.add_command_handler("screenshot", command_screenshot)
         self.amqp_widget.add_command_handler("show page", self._schedule_show_page)
-        ca.status_bar.register_tray_item(self.amqp_widget)
+        ca.register_tray_item(self.amqp_widget)
 
         system_page.amqp_widget = self.amqp_widget
 
+        ca.register_status_item(DateTimeDisplay())
+
         self.presence_tray = PresenceTrayWidget()
-        ca.status_bar.register_status_item(
+        ca.register_status_item(
             self.presence_tray,
             conf_lambda=lambda conf: conf.get("presence", None))
 
         spacestatus = SpaceStatusWidget()
-        ca.status_bar.register_status_item(
+        ca.register_status_item(
             spacestatus,
             conf_lambda=lambda conf: conf.get("spaceApi", None))
 

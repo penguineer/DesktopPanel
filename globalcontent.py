@@ -229,8 +229,6 @@ Builder.load_string("""
 #:import ScreenSaver screensaver.ScreenSaver
 #:import BacklightControl backlight.BacklightControl
 
-#:import StatusBar statusbar.StatusBar
-
 <GlobalContentArea>:
     anchor_y: 'top'
     anchor_x: 'left'
@@ -270,16 +268,31 @@ Builder.load_string("""
             orientation: 'vertical'
             spacing: 5
 
-            StatusBar:
-                size: [root.width - root.tab_width-4, root.status_height]
-                size_hint_x: None
+            BoxLayout:
+                id: status_area
+                orientation: 'horizontal'
                 size_hint_y: None
-                anchor_y: 'top'   
-                anchor_x: 'left'         
-                id: StatusBar
-                conf: root.conf
-                mqttc: root.mqttc
-                screensaver: root.screensaver
+                height: root.status_height
+                spacing: 10
+                padding: [10, 0]
+
+                BoxLayout:
+                    id: status_items
+                    orientation: 'horizontal'
+                    size_hint: None, 1
+                    width: self.minimum_width
+                    spacing: 10
+
+                Widget:
+                    # Spacer stretches between the two item boxes
+                    size_hint_x: 1
+
+                BoxLayout:
+                    id: tray_items
+                    orientation: 'horizontal'
+                    size_hint: None, 1
+                    width: self.minimum_width
+                    spacing: 5
     
             AnchorLayout:          
                 size: [root.width - root.tab_width-4, root.height - root.status_height - 4]
@@ -361,7 +374,7 @@ class GlobalContentArea(AnchorLayout):
 
     def __init__(self, **kwargs):
         self._pages = []
-        self._statusbar = None
+        self._status_items = []
 
         super(GlobalContentArea, self).__init__(**kwargs)
 
@@ -374,14 +387,20 @@ class GlobalContentArea(AnchorLayout):
 
         self.bind(conf=self._on_conf)
         self.bind(mqttc=self._on_mqttc)
+        self.bind(screensaver=self._on_screensaver)
 
         # Wake up the screensaver on every touch event
         # Blocks the event if the screen saver is active, so that the user is not poking in the dark (literally)
         Window.bind(on_touch_down=lambda i, e: self.ids.screensaver.wake_up())
 
-    def _on_conf(self, _instance, _conf: dict) -> None:
+    def _on_conf(self, _instance, conf: dict) -> None:
         for page in self._pages:
             self._page_conf(page)
+        for item in self._status_items:
+            conf_lambda = item['conf_lambda']
+            widget = item['widget']
+            if conf_lambda is not None and hasattr(widget, 'conf'):
+                widget.conf = conf_lambda(conf) if conf else None
 
     def _page_conf(self, page):
         if page and page.conf_lambda:
@@ -390,6 +409,16 @@ class GlobalContentArea(AnchorLayout):
     def _on_mqttc(self, _instance, mqttc) -> None:
         for page in self._pages:
             page.mqttc = mqttc
+        for item in self._status_items:
+            widget = item['widget']
+            if hasattr(widget, 'mqttc'):
+                widget.mqttc = mqttc
+
+    def _on_screensaver(self, _instance, screensaver) -> None:
+        for item in self._status_items:
+            widget = item['widget']
+            if hasattr(widget, 'screensaver'):
+                widget.screensaver = screensaver
 
     def set_page(self, page):
         if 0 <= page < len(self._pages):
@@ -424,6 +453,23 @@ class GlobalContentArea(AnchorLayout):
     def router(self):
         return self._router
 
-    @property
-    def status_bar(self):
-        return self.ids.StatusBar
+    def _register_bar_widget(self, widget, box_id, conf_lambda=None):
+        """Add *widget* to the named status bar box and wire configuration."""
+        widget.size_hint_x = None
+        widget.pos_hint = {'center_y': 0.5}
+        self._status_items.append({'widget': widget, 'conf_lambda': conf_lambda})
+        self.ids[box_id].add_widget(widget)
+        if conf_lambda is not None and hasattr(widget, 'conf'):
+            widget.conf = conf_lambda(self.conf) if self.conf else None
+        if hasattr(widget, 'mqttc'):
+            widget.mqttc = self.mqttc
+        if hasattr(widget, 'screensaver'):
+            widget.screensaver = self.screensaver
+
+    def register_status_item(self, widget, conf_lambda=None):
+        """Register a widget in the left status bar area (grows left-to-right)."""
+        self._register_bar_widget(widget, 'status_items', conf_lambda)
+
+    def register_tray_item(self, widget, conf_lambda=None):
+        """Register a widget in the right tray area (grows left-to-right)."""
+        self._register_bar_widget(widget, 'tray_items', conf_lambda)
