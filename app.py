@@ -125,45 +125,10 @@ class TabbedPanelApp(App):
         return ca
 
     def _register_presence_page(self, ca, presence_page):
-        """Wire the PresencePage to the PresenceTrayWidget and register it with the router.
-
-        Called one frame after build() so that all KV-defined widget ids on the
-        status bar and PresenceTrayWidget are guaranteed to be available.
-        """
+        """Wire the PresencePage to the PresenceTrayWidget and register it with the router."""
         presence = ca.status_bar.ids.presence
-
-        presence_page.request_callback = presence.ids.change_handler.post_status
-
-        presence_page.handle_self = presence.handle_self
-        presence.bind(handle_self=presence_page.setter('handle_self'))
-
-        presence_page.contacts = presence.contacts
-        presence.bind(contacts=presence_page.setter('contacts'))
-
-        presence_page.presence_list = presence.presence_list
-        presence.bind(presence_list=presence_page.setter('presence_list'))
-
-        presence_page.tracked_entries = presence.ids.presence_tracker.tracked_entries
-        presence.ids.presence_tracker.bind(tracked_entries=presence_page.setter('tracked_entries'))
-
-        presence_page.requested_status = presence.ids.change_handler.requested_status
-        presence.ids.change_handler.bind(requested_status=presence_page.setter('requested_status'))
-        presence_page.bind(requested_status=presence.ids.change_handler.setter('requested_status'))
-
-        presence_page.active_presence = presence.active_presence
-        presence.bind(active_presence=presence_page.setter('active_presence'))
-
-        presence_page.bind(active=self._on_presence_page_active)
-
+        presence.register_presence_page(presence_page)
         ca.register_border_button(presence, presence_page)
-
-    def _on_presence_page_active(self, instance, value):
-        """Refresh presence data when the presence page becomes visible."""
-        if not value:
-            return
-        presence = self.ca.status_bar.ids.presence
-        Clock.schedule_once(lambda dt: presence.ids.presence_receiver.receive_status())
-        Clock.schedule_once(lambda dt: presence.ids.history_fetcher.fetch_history())
 
     def on_stop(self):
         if self.config_obs is not None:

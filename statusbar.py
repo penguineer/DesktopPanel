@@ -1,10 +1,15 @@
 from datetime import datetime
 
+from kivy.factory import Factory
 from kivy.lang import Builder
 
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.properties import StringProperty, ColorProperty, ObjectProperty, DictProperty
 from kivy.clock import Clock
+
+# Deferred registration avoids a circular import:
+#   statusbar → page_presence → globalcontent → statusbar
+Factory.register('PresenceTrayWidget', module='page_presence')
 
 Builder.load_string("""
 <DateTimeDisplay>:
@@ -146,7 +151,6 @@ class TrayIcon(RelativeLayout):
 
 Builder.load_string("""
 #:import SpaceStatusWidget spacestatus.SpaceStatusWidget
-#:import PresenceTrayWidget presence_ui.PresenceTrayWidget
 
 <StatusBar>:
     BoxLayout:

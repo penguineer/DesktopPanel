@@ -1,20 +1,875 @@
-""" Module for page Presence """
+""" Module for presence UI and the Presence page """
 
+import datetime
+
+import dateutil.parser
+from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import ObjectProperty, StringProperty, ListProperty, DictProperty
+from kivy.properties import (BooleanProperty, ColorProperty, DictProperty,
+                              ListProperty, NumericProperty, ObjectProperty,
+                              StringProperty)
+from kivy.uix.relativelayout import RelativeLayout
 
 import globalcontent
+from presence_conn import PresenceSvcCfg, PresenceTracker, PresenceHistoryFetcher  # noqa: F401 - PresenceTracker, PresenceHistoryFetcher used in KV
+
+
+class Contact(object):
+    def __init__(self, handle, view_name=None, avatar=None):
+        if not handle:
+            raise ValueError("Handle must be provided!")
+
+        self._handle = handle
+        self._view_name = view_name
+        self._avatar = avatar
+
+    @property
+    def handle(self):
+        return self._handle
+
+    @property
+    def view_name(self):
+        return self._view_name
+
+    @property
+    def avatar_url(self):
+        return self._avatar
+
+
+class PresenceColor:
+    absent_color_rgba = [77 / 256, 77 / 256, 76 / 256, 1]
+    present_color_rgba = [0 / 256, 163 / 256, 86 / 256, 1]
+#    away_color_rgba = [249 / 256, 176 / 256, 0 / 256, 1]
+    away_color_rgba = [68 / 256, 53 / 256, 126 / 256, 1]
+    occupied_color_rgba = [228 / 256, 5 / 256, 41 / 256, 1]
+
+    @staticmethod
+    def color_for(value):
+        if value == "absent":
+            return PresenceColor.absent_color_rgba
+        elif value == "present":
+            return PresenceColor.present_color_rgba
+        elif value == "away":
+            return PresenceColor.away_color_rgba
+        elif value == "occupied":
+            return PresenceColor.occupied_color_rgba
+
+        return None
+
+
+def _format_since(iso_timestamp):
+    """Format an ISO 8601 timestamp as a compact local-time string.
+
+    Returns HH:MM for same-day timestamps, or DD.MM HH:MM for older ones.
+    Returns an empty string if the timestamp cannot be parsed.
+    """
+    if not iso_timestamp:
+        return ""
+    try:
+        dt = dateutil.parser.parse(iso_timestamp)
+        if dt.tzinfo:
+            dt = dt.astimezone(tz=None)
+        now = datetime.datetime.now()
+        if dt.date() == now.date():
+            return dt.strftime("%H:%M")
+        return dt.strftime("%d.%m %H:%M")
+    except (ValueError, TypeError):
+        return ""
+
+
+Builder.load_string("""
+#: import HumanizedDurationLabel timewidget.HumanizedDurationLabel
+
+<PresenceListItem>:
+    size: 250, 52
+    size_hint: 1, None
+
+    canvas:
+        Color:
+            rgba: root._presence_color
+        Line:
+            rounded_rectangle: 
+                0, 0, \\
+                self.size[0], self.size[1], \\
+                5
+
+    BoxLayout:
+        padding: [2, 2, 8, 2]
+        spacing: 16
+
+        AsyncImage:
+            source: root.contact.avatar_url if root.contact and root.contact.avatar_url else '' 
+            size: 48, 48
+            size_hint: None, None
+            color: root._presence_color 
+
+        BoxLayout:
+            orientation: 'vertical'
+            padding: 2
+            spacing: 4
+            
+            Label:
+                text: root.contact.view_name if root.contact and root.contact.view_name else '<None>' 
+                font_size: 18
+                halign: 'left'
+                valign: 'center'
+                font_name: 'assets/FiraMono-Regular.ttf'
+                text_size: self.size
+                color: root._presence_color
+                size_hint_y: 1
+                
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.5
+                
+                Label:
+                    text: root._displayed_presence.message \\
+                        if root._displayed_presence and root._displayed_presence.message else ''
+                    font_size: 12
+                    text_size: self.size
+                    size_hint_x: 0.8
+                    shorten: True
+                    halign: 'left'
+                    color: root._presence_color
+            
+                HumanizedDurationLabel:
+                    iso_instant: root._displayed_presence.timestamp if root._displayed_presence else None
+                    update: True
+                    font_size: 12
+                    text_size: self.size
+                    size_hint_x: 0.2
+                    halign: 'right'
+                    color: root._presence_color
+                    
+""")
+
+
+class PresenceListItem(RelativeLayout):
+    INACTIVE_COLOR = [177 / 256, 77 / 256, 76 / 256, 1]
+    
+    _presence_color = ColorProperty([177 / 256, 77 / 256, 76 / 256, 1])
+    _presence_since = StringProperty(None, allownone=True)
+
+    contact = ObjectProperty(None, allownone=True)
+    presence_list = ListProperty()
+
+    _displayed_presence = ObjectProperty(None, allownone=True)
+
+    def __init__(self, **kwargs):
+        super(PresenceListItem, self).__init__(**kwargs)
+
+        self.bind(contact=self._on_data)
+        self.bind(presence_list=self._on_data)
+
+    def _on_data(self, _instance, _value):
+        if self.contact is None:
+            self._displayed_presence = None
+            return
+
+        self_presence = list(filter(lambda el: el.handle == self.contact.handle, self.presence_list))
+        self._displayed_presence = self_presence[0] if self_presence else None
+
+    def on__displayed_presence(self, _instance, _value):
+        if self._displayed_presence is None:
+            self._presence_color = PresenceListItem.INACTIVE_COLOR
+            return
+
+        c = PresenceColor.color_for(self._displayed_presence.status) if self._displayed_presence else None
+        self._presence_color = c if c else PresenceColor.absent_color_rgba
+
+
+Builder.load_string("""
+#: import HumanizedDurationLabel timewidget.HumanizedDurationLabel
+
+<PresenceHistoryItem>:
+    size: 250, 56
+    size_hint: 1, None
+
+    canvas:
+        Color:
+            rgba: root._presence_color
+        Line:
+            rounded_rectangle:
+                0, 0, \\
+                self.size[0], self.size[1], \\
+                5
+
+    BoxLayout:
+        orientation: 'vertical'
+        padding: [8, 4]
+        spacing: 2
+
+        Label:
+            text: root._since_text
+            font_size: 11
+            font_name: 'assets/FiraMono-Regular.ttf'
+            halign: 'left'
+            valign: 'center'
+            text_size: self.size
+            color: root._presence_color
+            size_hint_y: 0.4
+
+        BoxLayout:
+            orientation: 'horizontal'
+            spacing: 8
+            size_hint_y: 0.6
+
+            Label:
+                text: root._status_text
+                font_size: 16
+                font_name: 'assets/FiraMono-Regular.ttf'
+                halign: 'left'
+                valign: 'center'
+                text_size: self.size
+                color: root._presence_color
+                size_hint_x: 0.4
+
+            HumanizedDurationLabel:
+                id: duration_label
+                font_size: 16
+                font_name: 'assets/FiraMono-Regular.ttf'
+                halign: 'right'
+                valign: 'center'
+                text_size: self.size
+                color: root._presence_color
+                size_hint_x: 0.6
+""")
+
+
+class PresenceHistoryItem(RelativeLayout):
+    _presence_color = ColorProperty(PresenceColor.absent_color_rgba)
+    _status_text = StringProperty("")
+    _since_text = StringProperty("")
+
+    tracked_entry = ObjectProperty(None, allownone=True)
+
+    def __init__(self, **kwargs):
+        super(PresenceHistoryItem, self).__init__(**kwargs)
+
+        self.bind(tracked_entry=self._on_tracked_entry)
+
+    def _on_tracked_entry(self, _instance, entry):
+        if 'duration_label' not in self.ids:
+            return
+
+        if entry is None:
+            self._presence_color = PresenceColor.absent_color_rgba
+            self._status_text = ""
+            self._since_text = ""
+            self.ids.duration_label.update = False
+            self.ids.duration_label.iso_instant = None
+            self.ids.duration_label.duration_millis = None
+            return
+
+        c = PresenceColor.color_for(entry.status)
+        self._presence_color = c if c else PresenceColor.absent_color_rgba
+        self._status_text = entry.status.capitalize() if entry.status else ""
+        self._since_text = _format_since(entry.since)
+
+        if entry.is_current:
+            self.ids.duration_label.update = True
+            self.ids.duration_label.iso_instant = entry.since
+        else:
+            self.ids.duration_label.update = False
+            self.ids.duration_label.iso_instant = None
+            self.ids.duration_label.duration_millis = entry.duration_ms
+
+
+Builder.load_string("""
+#:import ScrollableList scrollable_list.ScrollableList
+
+<PresenceHistoryList>:
+    ScrollableList:
+        id: scroll_list
+        size_hint: 1, 1
+
+        ScrollView:
+            id: sv
+            size_hint: 1, 1
+            do_scroll_x: False
+            bar_width: 0
+
+            BoxLayout:
+                id: history_box
+                orientation: 'vertical'
+                spacing: 4
+                padding: [0, 4]
+                size_hint_y: None
+                height: self.minimum_height
+""")
+
+
+class PresenceHistoryList(RelativeLayout):
+    tracked_entries = ListProperty()
+
+    def __init__(self, **kwargs):
+        super(PresenceHistoryList, self).__init__(**kwargs)
+
+        self.bind(tracked_entries=self._on_tracked_entries)
+
+    def on_kv_post(self, base_widget):
+        """Bind scroll-position tracking after KV rules are applied."""
+        self.ids.scroll_list.bind_scroll_view(self.ids.sv)
+
+    def _on_tracked_entries(self, _instance, entries):
+        if 'history_box' not in self.ids:
+            return
+
+        self.ids.history_box.clear_widgets()
+
+        for entry in entries:
+            item = PresenceHistoryItem()
+            item.tracked_entry = entry
+            self.ids.history_box.add_widget(item)
+
+        # Update scroll indicators after content changes.  The guard is
+        # needed because this callback can fire before on_kv_post when
+        # tracked_entries is assigned during widget construction.
+        if 'scroll_list' in self.ids and 'sv' in self.ids:
+            Clock.schedule_once(lambda dt: self.ids.scroll_list.update_indicators(self.ids.sv))
+
+
+Builder.load_string("""
+<PresenceList>:
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint: 1, 1
+
+        PresenceListItem:
+            id: presence_self
+            contact: root.contacts.get(root.handle_self, None) if root.contacts and root.handle_self else None
+            presence_list: root.presence_list
+
+        Widget:
+            size_hint: None, None
+            size: 0, 16
+
+        BoxLayout:
+            id: presence_others
+            orientation: 'vertical'
+            spacing: 8
+
+        Widget: 
+            size_hint: 1, 1
+
+""")
+
+
+class PresenceList(RelativeLayout):
+    handle_self = StringProperty(None, allownone=True)
+    contacts = DictProperty(None)
+
+    presence_list = ListProperty([])
+
+    def __init__(self, **kwargs):
+        super(PresenceList, self).__init__(**kwargs)
+
+        self.bind(handle_self=self._on_contact_change)
+        self.bind(contacts=self._on_contact_change)
+
+    def _on_contact_change(self, _instance, _value):
+        if 'presence_others' not in self.ids:
+            return
+
+        self.ids.presence_others.clear_widgets()
+
+        if not self.contacts:
+            return
+
+        for handle in self.contacts.keys():
+            if handle != self.handle_self:
+                pi = PresenceListItem()
+                pi.contact = self.contacts.get(handle)
+                pi.presence_list = self.presence_list
+                self.bind(presence_list=pi.setter('presence_list'))
+                self.ids.presence_others.add_widget(pi)
+
+
+Builder.load_string("""
+<PresenceSelector>:
+    #:set selbtn_size 180
+
+    size: [selbtn_size*2, selbtn_size*2 + 20*2]
+    size_hint: [None, None]
+
+    canvas:
+        Color:
+            rgb: root._btn_present_color
+        RoundedRectangle:
+            pos: self.size[0] - selbtn_size + 8, self.size[1] - selbtn_size + 8 - 20 
+            size: selbtn_size - 8, selbtn_size - 8
+            radius: [10]
+
+        Color:
+            rgb: root._btn_occupied_color
+        RoundedRectangle:
+            pos: self.size[0] - selbtn_size + 8, 20
+            size: selbtn_size - 8, selbtn_size - 8
+            radius: [10]
+
+        Color:
+            rgb: root._btn_absent_color
+        RoundedRectangle:
+            pos: 0, 20
+            size: selbtn_size - 8, selbtn_size - 8
+            radius: [10]
+
+        Color:
+            rgb: root._btn_away_color
+        RoundedRectangle:
+            pos: 0, self.size[1] - selbtn_size - 20 + 8
+            size: selbtn_size - 8, selbtn_size - 8
+            radius: [10]
+
+        Color:
+            rgb: root.present_color_rgba
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \\
+                selbtn_size*0.5+12, \\
+                0, 90
+            width: 4
+        Line:
+            rounded_rectangle: 
+                self.size[0] / 2 + 10, self.size[0] / 2 + 10 + 20, \\
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \\
+                10
+            width: 2
+
+        Color:
+            rgb: root.occupied_color_rgba
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \\
+                selbtn_size*0.5+12, \\
+                90, 180
+            width: 4
+        Line:
+            rounded_rectangle: 
+                self.size[0] / 2 + 10, 20, \\
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \\
+                10
+            width: 2
+
+        Color:
+            rgb: root.absent_color_rgba
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \\
+                selbtn_size*0.5+12, \\
+                180, 270
+            width: 4
+        Line:
+            rounded_rectangle: 
+                0, 20, \\
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \\
+                10
+            width: 2
+
+        Color:
+            rgb: root.away_color_rgba
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \\
+                selbtn_size*0.5+12, \\
+                270, 360
+            width: 4
+        Line:
+            rounded_rectangle: 
+                0, self.size[0] / 2 + 10 + 20, \\
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \\
+                10
+            width: 2
+
+
+        Color:
+            rgb: root.background_color
+        Line:
+            points:
+                self.size[0] / 2, 0, \\
+                self.size[0] / 2, self.size[1]
+            width: 8     
+            cap: 'none'
+        Line:
+            points:
+                0, self.size[1] / 2, \\
+                self.size[0], self.size[1] / 2
+            width: 8     
+            cap: 'none'
+        Line:
+            circle:
+                self.size[0] / 2, self.size[1] / 2, \\
+                selbtn_size*0.5
+            width: 12
+
+        Color:
+            rgb: root._ind_circle_color
+        Ellipse:
+            pos: selbtn_size*0.5+4, selbtn_size*0.5+4+20
+            size: selbtn_size*1-8, selbtn_size*1-8
+
+
+
+
+    BoxLayout:
+        orientation: 'vertical'
+
+        BoxLayout:
+            orientation: 'horizontal'
+            size_x: 20
+            padding: [10, 0, 10, 0]
+
+            Label:
+                text: 'Away'
+                halign: 'left'
+                text_size: self.size
+                color: root.text_color
+
+            Label:
+                text: 'Present'
+                halign: 'right'
+                text_size: self.size
+                color: root.text_color
+
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint: [None, None]
+            size: [selbtn_size*2, selbtn_size]
+
+            Button:
+                id: btn_away
+                #text: 'Away'
+                background_normal: ''
+                background_down: ''
+                background_color: 0, 0, 0, 0
+                on_press: root.request_callback("away")
+
+            Button:
+                id: btn_present
+                #text: 'Present'
+                background_normal: ''
+                background_down: ''
+                background_color: 0, 0, 0, 0
+                on_press: root.request_callback("present")
+
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint: [None, None]
+            size: [selbtn_size*2, selbtn_size]
+
+            Button:
+                id: btn_absent
+                #text: 'Absent'
+                background_normal: ''
+                background_down: ''
+                background_color: 0, 0, 0, 0
+                on_press: root.request_callback("absent")
+
+            Button:
+                id: btn_occupied
+                #text: 'Occupied'
+                background_normal: ''
+                background_down: ''
+                background_color: 0, 0, 0, 0
+                on_press: root.request_callback("occupied")
+
+        BoxLayout:
+            orientation: 'horizontal'
+            padding: [10, 0, 10, 0]
+
+            Label:
+                text: 'Absent'
+                halign: 'left'
+                text_size: self.size
+                color: root.text_color
+
+            Label:
+                text: 'Occupied'
+                halign: 'right'
+                text_size: self.size
+                color: root.text_color
+""")
+
+
+class PresenceSelector(RelativeLayout, PresenceColor):
+    background_color = ColorProperty([0, 0, 0, 1])
+    """Background color, in the format (r, g, b, a).
+
+    :attr:`background_color` is a :class:`~kivy.properties.ColorProperty` and
+    defaults to [1, 1, 1, 1].
+    """
+
+    border_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
+    """Border color, in the format (r, g, b, a).
+
+    :attr:`border_color` is a :class:`~kivy.properties.ColorProperty` and
+    defaults to [77 / 256, 77 / 256, 76 / 256, 1].
+    """
+
+    text_color = ColorProperty([249 / 256, 176 / 256, 0 / 256, 1])
+    """Border color, in the format (r, g, b, a).
+
+    :attr:`text_color` is a :class:`~kivy.properties.ColorProperty` and
+    defaults to [249 / 256, 176 / 256, 0 / 256, 1].
+    """
+
+    active_status = StringProperty(None, allownone=True)
+    requested_status = StringProperty(None, allownone=True)
+
+    request_callback = ObjectProperty()
+
+    _ind_circle_color = ColorProperty([0, 0, 0, 1])
+    _btn_absent_color = ColorProperty([0, 0, 0, 1])
+    _btn_present_color = ColorProperty([0, 0, 0, 1])
+    _btn_occupied_color = ColorProperty([0, 0, 0, 1])
+    _btn_away_color = ColorProperty([0, 0, 0, 1])
+
+    def __init__(self, **kwargs):
+        super(PresenceSelector, self).__init__(**kwargs)
+
+        self.bind(active_status=self._update_active_status_color)
+        self.bind(requested_status=self._update_requested_status_color)
+
+    def _update_active_status_color(self, _instance, value):
+        c = PresenceColor.color_for(value)
+        if c is None:
+            c = self.background_color
+        self._ind_circle_color = c
+
+    def _update_requested_status_color(self, _instance, value):
+        for state in ["absent", "present", "occupied", "away"]:
+            setattr(self, f"_btn_%s_color" % state,
+                    PresenceColor.color_for(value) if state == value else [0, 0, 0, 1])
+
+
+Builder.load_string("""
+#:import MqttPresenceUpdater presence_conn.MqttPresenceUpdater
+#:import PingTechPresenceUpdater presence_conn.PingTechPresenceUpdater
+#:import PingTechPresenceReceiver presence_conn.PingTechPresenceReceiver
+#:import PresenceChangeHandler presence_conn.PresenceChangeHandler
+#:import PresenceTracker presence_conn.PresenceTracker
+#:import PresenceHistoryFetcher presence_conn.PresenceHistoryFetcher
+
+<PresenceTrayWidget>:
+    presence_list: presence_receiver.presence_list
+    active_presence: presence_receiver.active_presence
+    
+    size: 100, 50
+
+    #:set radius 5
+    #:set top 6
+    #:set bottom 8
+    canvas:
+        Color:
+            rgba: root._presence_color
+        Line:
+            rounded_rectangle: 
+                0, bottom, \\
+                self.size[0], self.size[1]-top-bottom, \\
+                radius
+            width: 1
+
+    Label:
+        text: root._presence_text if root._presence_text is not None else ""
+        color: root._presence_color 
+        font_name: 'assets/FiraMono-Regular.ttf'
+        pos: 0, 0+bottom-top
+
+    MqttPresenceUpdater:
+        id: mqtt_presence
+        mqttc: root.mqttc
+        topic: root.conf.get("mqtt-presence-topic", "") if root.conf else ""
+        
+    PingTechPresenceUpdater:
+        id: pingtech_presence        
+        svc_conf: root.presence_svc_cfg
+        retrieval_trigger: presence_receiver.receive_status
+        
+    PingTechPresenceReceiver:
+        id: presence_receiver        
+        svc_conf: root.presence_svc_cfg
+        contacts: root.contacts
+        handle_self: root.handle_self
+        refresh_interval: root.conf.get("refresh-interval", 0) if root.conf else 0
+        
+    PresenceChangeHandler:
+        id: change_handler
+        publishers: [pingtech_presence, mqtt_presence]
+        active_presence: presence_receiver.active_presence
+        repost_timeout: 5 #  repost timeout [s] to fix race conditions with multiple clients
+
+    PresenceTracker:
+        id: presence_tracker
+        active_presence: presence_receiver.active_presence
+        requested_status: change_handler.requested_status
+
+    PresenceHistoryFetcher:
+        id: history_fetcher
+        svc_conf: root.presence_svc_cfg
+        count: root.history_count
+""")
+
+
+class PresenceTrayWidget(RelativeLayout):
+    conf = DictProperty(None, allownone=True)
+    mqttc = ObjectProperty(None, allownone=True)
+    screensaver = ObjectProperty(None, allownone=True)
+
+    active_presence = ObjectProperty(None, allownone=True)
+
+    presence_svc_cfg = ObjectProperty(None, allownone=True)
+
+    handle_self = StringProperty(None, allownone=True)
+    handle_others = ListProperty()
+    contacts = DictProperty()
+    presence_list = ListProperty()
+
+    history_count = NumericProperty(None, allownone=True)
+
+    screensaver_disabled_states = ListProperty([])
+
+    page_callback = ObjectProperty(None, allownone=True)
+
+    _presence_color = ColorProperty(PresenceColor.absent_color_rgba)
+    _presence_text = StringProperty(None)
+
+    presence_texts = {
+        "absent": "Absent",
+        "present": "Present",
+        "occupied": "Occupied",
+        "away": "Away"
+    }
+
+    def __init__(self, **kwargs):
+        super(PresenceTrayWidget, self).__init__(**kwargs)
+
+        self.bind(conf=self._load_presence_config)
+        self.bind(mqttc=self._load_presence_config)
+
+        self.bind(active_presence=self._on_active_presence)
+
+    def on_kv_post(self, base_widget):
+        """Bind history fetcher so it seeds the tracker when no session data exists."""
+        self.ids.history_fetcher.bind(tracked_entries=self._seed_tracker_from_history)
+
+    def _seed_tracker_from_history(self, _instance, entries):
+        """Replace the tracker with the authoritative history fetched from the server.
+
+        A freshly fetched history is always the source of truth and completely
+        replaces the local tracker list so that changes made by other parties
+        are immediately reflected.  The only exception is when the user has an
+        optimistic entry in progress (they pressed a button but the server
+        round-trip has not completed yet); in that case the optimistic entry is
+        preserved to maintain immediate visual feedback.
+        """
+        tracker = self.ids.presence_tracker
+        if tracker.has_optimistic_entry:
+            return
+        tracker.tracked_entries = entries
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            if self.page_callback and callable(self.page_callback):
+                self.page_callback()
+            return True
+        return super(PresenceTrayWidget, self).on_touch_down(touch)
+
+    def register_presence_page(self, page):
+        """Bind a PresencePage to this widget for data sharing.
+
+        Sets up all property bindings so the page always reflects the live
+        presence data owned by this widget, and schedules a status refresh
+        when the page becomes active.
+        """
+        page.request_callback = self.ids.change_handler.post_status
+
+        page.handle_self = self.handle_self
+        self.bind(handle_self=page.setter('handle_self'))
+
+        page.contacts = self.contacts
+        self.bind(contacts=page.setter('contacts'))
+
+        page.presence_list = self.presence_list
+        self.bind(presence_list=page.setter('presence_list'))
+
+        page.tracked_entries = self.ids.presence_tracker.tracked_entries
+        self.ids.presence_tracker.bind(tracked_entries=page.setter('tracked_entries'))
+
+        page.requested_status = self.ids.change_handler.requested_status
+        self.ids.change_handler.bind(requested_status=page.setter('requested_status'))
+        page.bind(requested_status=self.ids.change_handler.setter('requested_status'))
+
+        page.active_presence = self.active_presence
+        self.bind(active_presence=page.setter('active_presence'))
+
+        page.bind(active=self._on_presence_page_active)
+
+    def _on_presence_page_active(self, _instance, value):
+        """Refresh presence data when the presence page becomes visible."""
+        if not value:
+            return
+        Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
+        Clock.schedule_once(lambda dt: self.ids.history_fetcher.fetch_history())
+
+    def _on_active_presence(self, _instance, value):
+        if value and value.status in self.presence_texts:
+            self._presence_color = PresenceColor.color_for(value.status) if value else None
+            self._presence_text = self.presence_texts.get(value.status, PresenceColor.absent_color_rgba) if value \
+                else None
+        else:
+            self._presence_color = PresenceColor.color_for("absent")
+            self._presence_text = ""
+
+        if self.active_presence and self.screensaver:
+            self.screensaver.timeout = 0 if self.active_presence.status in self.screensaver_disabled_states else None
+
+    def _load_presence_config(self, _instance, _value):
+        if self.conf is None:
+            self.handle_self = ""
+            self.handle_others = []
+            self.presence_list = []
+            self.presence_receiver = None
+            self.presence_updater = None
+            self.presence_emitter = None
+            self.screensaver_disabled_states = []
+            self.history_count = None
+            return
+
+        self.handle_self = self.conf.get('self', None)
+        self.handle_others = self.conf.get('others', [])
+
+        contacts = dict()
+
+        cfg_contacts = self.conf.get('people', {})
+        if cfg_contacts is not None:
+            for p in [self.handle_self] + self.handle_others:
+                person = cfg_contacts.get(p, None)
+                if person is not None:
+                    contact = Contact(handle=p,
+                                      view_name=person.get('view_name', None),
+                                      avatar=person.get('avatar', None))
+                    contacts[p] = contact
+        self.contacts = contacts
+
+        self.presence_svc_cfg = PresenceSvcCfg(
+            svc=self.conf['svc'],
+            handle=self.conf['self'],
+            token=self.conf['token']
+        )
+
+        self.history_count = self.conf.get("history-count", None)
+
+        Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
+
+        self.screensaver_disabled_states = self.conf.get("screensaver-disabled-states", [])
 
 
 def _noop_request_callback(*_args):
-    """Default no-op presence request callback (replaced at runtime by app.py)."""
+    """Default no-op presence request callback (replaced at runtime by register_presence_page)."""
     pass
 
 
 Builder.load_string("""
-#:import PresenceHistoryList presence_ui.PresenceHistoryList
-#:import PresenceSelector presence_ui.PresenceSelector
-
 <PresencePage>:
     label: 'presence'
     icon: 'assets/icon_presence.png'
@@ -22,10 +877,10 @@ Builder.load_string("""
     AnchorLayout:
         anchor_x: 'left'
         anchor_y: 'top'
-        padding: [8, 8, 8, 8]
+        padding: [8, 20, 8, 8]
 
         PresenceHistoryList:
-            size: 350, 400
+            size: 340, 400
             size_hint: None, 1
             tracked_entries: root.tracked_entries
 
