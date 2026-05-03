@@ -5,17 +5,33 @@ from kivy.properties import BooleanProperty
 from kivy.uix.floatlayout import FloatLayout
 
 
+# Minimum number of pixels that must be hidden above or below the viewport
+# before the corresponding scroll-indicator arrow is shown.  A small hidden
+# sliver (e.g. the last few pixels of the bottom item) does not merit an arrow.
+_SCROLL_ARROW_THRESHOLD_PX = 20
+
+
 def _compute_scroll_indicators(content_height, view_height, scroll_y):
     """Compute whether scroll indicator arrows should be visible.
+
+    An arrow is shown only when the hidden content in that direction exceeds
+    ``_SCROLL_ARROW_THRESHOLD_PX`` pixels, so that a barely-hidden sliver
+    of the top or bottom item does not trigger an indicator.
 
     :param content_height: Total pixel height of the scrollable content.
     :param view_height: Pixel height of the visible viewport.
     :param scroll_y: Current vertical scroll position (1.0 = top, 0.0 = bottom).
     :returns: Tuple ``(has_more_above, has_more_below)``.
     """
-    has_overflow = content_height > view_height
-    has_more_above = has_overflow and scroll_y < 0.999
-    has_more_below = has_overflow and scroll_y > 0.001
+    overflow = content_height - view_height
+    if overflow <= 0:
+        return False, False
+
+    hidden_above = (1.0 - scroll_y) * overflow
+    hidden_below = scroll_y * overflow
+
+    has_more_above = hidden_above > _SCROLL_ARROW_THRESHOLD_PX
+    has_more_below = hidden_below > _SCROLL_ARROW_THRESHOLD_PX
     return has_more_above, has_more_below
 
 
@@ -55,8 +71,10 @@ class ScrollableList(FloatLayout):
     Wrap any :class:`~kivy.uix.scrollview.ScrollView` or
     :class:`~kivy.uix.recycleview.RecycleView` inside this widget and call
     :meth:`bind_scroll_view` with that widget after the KV tree is built
-    (e.g. inside ``on_kv_post``).  The arrows automatically appear whenever
-    there is content hidden above or below the visible area.
+    (e.g. inside ``on_kv_post``).  The arrows appear only when the hidden
+    content in that direction exceeds :data:`_SCROLL_ARROW_THRESHOLD_PX`
+    pixels, so a barely-hidden sliver of the edge item does not trigger an
+    indicator.
 
     To force an indicator refresh after the list data changes, call
     :meth:`update_indicators`.

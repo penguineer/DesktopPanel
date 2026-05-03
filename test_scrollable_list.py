@@ -2,7 +2,7 @@
 
 import pytest
 
-from scrollable_list import _compute_scroll_indicators
+from scrollable_list import _compute_scroll_indicators, _SCROLL_ARROW_THRESHOLD_PX
 
 
 class TestComputeScrollIndicators:
@@ -43,37 +43,43 @@ class TestComputeScrollIndicators:
         assert above
         assert below
 
-    def test_overflow_near_top_threshold(self):
-        # Just below the 0.999 threshold → above arrow visible
+    def test_small_hidden_above_suppresses_arrow(self):
+        # overflow = 400 - 200 = 200 px
+        # hidden_above = (1 - 0.95) * 200 = 10 px ≤ threshold → no above arrow
         above, below = _compute_scroll_indicators(
-            content_height=400, view_height=200, scroll_y=0.998
+            content_height=400, view_height=200, scroll_y=0.95
         )
-        assert above
+        assert not above
+        # hidden_below = 0.95 * 200 = 190 px > threshold → below arrow shown
         assert below
 
-    def test_overflow_at_exact_top_threshold(self):
-        # At exactly 0.999 → above arrow not visible (>=0.999 means "at top")
+    def test_small_hidden_below_suppresses_arrow(self):
+        # overflow = 400 - 200 = 200 px
+        # hidden_below = 0.05 * 200 = 10 px ≤ threshold → no below arrow
         above, below = _compute_scroll_indicators(
-            content_height=400, view_height=200, scroll_y=0.999
+            content_height=400, view_height=200, scroll_y=0.05
+        )
+        # hidden_above = (1 - 0.05) * 200 = 190 px > threshold → above arrow shown
+        assert above
+        assert not below
+
+    def test_hidden_at_exact_threshold_suppresses_arrow(self):
+        # hidden_above == threshold exactly → NOT shown (condition is strictly >)
+        # threshold = 20 px, overflow = 200 → scroll_y = 1 - 20/200 = 0.9
+        above, below = _compute_scroll_indicators(
+            content_height=400, view_height=200, scroll_y=0.9
         )
         assert not above
         assert below
 
-    def test_overflow_near_bottom_threshold(self):
-        # Just above the 0.001 threshold → below arrow visible
+    def test_hidden_just_above_threshold_shows_arrow(self):
+        # hidden_above slightly > threshold → arrow shown
+        # Use overflow=200 and hide 21 px above: scroll_y = 1 - 21/200 = 0.895
         above, below = _compute_scroll_indicators(
-            content_height=400, view_height=200, scroll_y=0.002
+            content_height=400, view_height=200, scroll_y=0.895
         )
         assert above
         assert below
-
-    def test_overflow_at_exact_bottom_threshold(self):
-        # At exactly 0.001 → below arrow not visible (<=0.001 means "at bottom")
-        above, below = _compute_scroll_indicators(
-            content_height=400, view_height=200, scroll_y=0.001
-        )
-        assert above
-        assert not below
 
     def test_zero_content_height(self):
         above, below = _compute_scroll_indicators(
@@ -83,7 +89,7 @@ class TestComputeScrollIndicators:
         assert not below
 
     def test_zero_view_height_with_content(self):
-        # View height zero with content → overflow is True
+        # View height zero with content → overflow is positive
         above, below = _compute_scroll_indicators(
             content_height=100, view_height=0, scroll_y=0.5
         )
