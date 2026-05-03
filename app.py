@@ -15,6 +15,7 @@ import mqtt
 import globalcontent
 from page_gtd import GtdPage
 from page_home import HomePage
+from page_presence import PresencePage
 from page_system import SystemPage
 from reloadable_json import JsonObserver
 
@@ -112,10 +113,50 @@ class TabbedPanelApp(App):
         self.amqp_widget.conf = self.conf.get("amqp", None) if self.conf else None
         self.amqp_widget.add_command_handler("test", command_log)
         self.amqp_widget.add_command_handler("screenshot", command_screenshot)
-        self.amqp_widget.add_command_handler("presence popup", self.schedule_popup_presence_dlg)
+        self.amqp_widget.add_command_handler("show page", self._schedule_show_page)
         ca.status_bar.tray_bar.register_widget(self.amqp_widget)
 
         system_page.amqp_widget = self.amqp_widget
+
+        presence_page = PresencePage()
+
+        def _register_presence_page(_dt):
+            presence = ca.status_bar.ids.presence
+
+            def _on_request(status, _message=None):
+                presence.ids.change_handler.post_status(status)
+
+            presence_page.request_callback = _on_request
+
+            presence_page.handle_self = presence.handle_self
+            presence.bind(handle_self=presence_page.setter('handle_self'))
+
+            presence_page.contacts = presence.contacts
+            presence.bind(contacts=presence_page.setter('contacts'))
+
+            presence_page.presence_list = presence.presence_list
+            presence.bind(presence_list=presence_page.setter('presence_list'))
+
+            presence_page.tracked_entries = presence.ids.presence_tracker.tracked_entries
+            presence.ids.presence_tracker.bind(tracked_entries=presence_page.setter('tracked_entries'))
+
+            presence_page.requested_status = presence.ids.change_handler.requested_status
+            presence.ids.change_handler.bind(requested_status=presence_page.setter('requested_status'))
+            presence_page.bind(requested_status=presence.ids.change_handler.setter('requested_status'))
+
+            presence_page.active_presence = presence.active_presence
+            presence.bind(active_presence=presence_page.setter('active_presence'))
+
+            def _on_presence_page_active(_instance, value):
+                if value:
+                    Clock.schedule_once(lambda dt: presence.ids.presence_receiver.receive_status())
+                    Clock.schedule_once(lambda dt: presence.ids.history_fetcher.fetch_history())
+
+            presence_page.bind(active=_on_presence_page_active)
+
+            ca.register_border_button(presence, presence_page)
+
+        Clock.schedule_once(_register_presence_page)
 
         self.ca = ca
         return ca
@@ -129,12 +170,10 @@ class TabbedPanelApp(App):
     def select(self, index):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
 
-    def popup_presence_dlg(self):
-        if self.ca:
-            self.ca.status_bar.ids.presence.popup_handler()
-
-    def schedule_popup_presence_dlg(self, _cmd, _args):
-        Clock.schedule_once(lambda dt: self.popup_presence_dlg())
+    def _schedule_show_page(self, _cmd, args):
+        handle = args.get("page", None)
+        if handle:
+            Clock.schedule_once(lambda dt: self.ca.router.switch_to(handle))
 
     def schedule_update_configuration(self, conf):
         Clock.schedule_once(lambda dt: self.setter('conf')(self, conf))

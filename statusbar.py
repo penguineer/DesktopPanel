@@ -129,11 +129,19 @@ class TrayIcon(RelativeLayout):
     icon = StringProperty(None)
     icon_color = ColorProperty([77 / 256, 77 / 256, 76 / 256, 1])
 
+    page_callback = ObjectProperty(None, allownone=True)
+
     def __init__(self, label=None, icon=None, **kwargs):
         self.label = label
         self.icon = icon
 
         super(RelativeLayout, self).__init__(**kwargs)
+
+    def on_touch_down(self, touch):
+        if self.page_callback and self.collide_point(*touch.pos):
+            self.page_callback()
+            return True
+        return super(TrayIcon, self).on_touch_down(touch)
 
 
 Builder.load_string("""

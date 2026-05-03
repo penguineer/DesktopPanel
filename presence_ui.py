@@ -8,7 +8,6 @@ from kivy.lang import Builder
 from kivy.properties import BooleanProperty, ColorProperty, StringProperty, ListProperty, ObjectProperty, DictProperty, NumericProperty
 from kivy.uix.relativelayout import RelativeLayout
 
-from dlg import FullscreenTimedModal
 from presence_conn import PresenceSvcCfg, PresenceTracker, PresenceHistoryFetcher  # noqa: F401 - PresenceTracker, PresenceHistoryFetcher used in KV
 
 
@@ -641,51 +640,6 @@ class PresenceSelector(RelativeLayout, PresenceColor):
 
 
 Builder.load_string("""
-<PresenceDlg>:
-    title: "Presence"
-
-    AnchorLayout:
-        anchor_x: 'left'
-        anchor_y: 'top'
-
-        padding: [8, 70 + 20, 8, 8+20]
-
-        PresenceHistoryList:
-            size: 350, 400
-            size_hint: None, 1
-            tracked_entries: root.tracked_entries
-
-    AnchorLayout:
-        anchor_x: 'right'
-        anchor_y: 'bottom'
-
-        padding: [8, 8]
-
-        PresenceSelector:        
-            id: ps
-            size_hint: [None, None]
-            active_status: root.active_presence.status if root.active_presence else "unknown"
-            requested_status: root.requested_status
-            request_callback: root.request_callback
-""")
-
-
-class PresenceDlg(FullscreenTimedModal):
-    active_presence = ObjectProperty(None, allownone=True)
-    requested_status = StringProperty(None, allownone=True)
-
-    handle_self = StringProperty(None, allownone=True)
-    contacts = DictProperty()
-    presence_list = ListProperty()
-    tracked_entries = ListProperty()
-
-    request_callback = ObjectProperty()
-
-    def __init__(self, **kwargs):
-        super(PresenceDlg, self).__init__(**kwargs)
-
-
-Builder.load_string("""
 #:import MqttPresenceUpdater presence_conn.MqttPresenceUpdater
 #:import PingTechPresenceUpdater presence_conn.PingTechPresenceUpdater
 #:import PingTechPresenceReceiver presence_conn.PingTechPresenceReceiver
@@ -771,6 +725,8 @@ class PresenceTrayWidget(RelativeLayout):
 
     screensaver_disabled_states = ListProperty([])
 
+    page_callback = ObjectProperty(None, allownone=True)
+
     _presence_color = ColorProperty(PresenceColor.absent_color_rgba)
     _presence_text = StringProperty(None)
 
@@ -788,8 +744,6 @@ class PresenceTrayWidget(RelativeLayout):
         self.bind(mqttc=self._load_presence_config)
 
         self.bind(active_presence=self._on_active_presence)
-
-        self.pr_sel = None
 
     def on_kv_post(self, base_widget):
         """Bind history fetcher so it seeds the tracker when no session data exists."""
@@ -810,75 +764,14 @@ class PresenceTrayWidget(RelativeLayout):
             return
         tracker.tracked_entries = entries
 
-    def popup_handler(self, _cmd=None, _args=None):
-        Clock.schedule_once(lambda dt: self.ids.presence_receiver.receive_status())
-
-        if self.pr_sel is not None and self.pr_sel.is_inactive():
-            self.pr_sel = None
-
-        if self.pr_sel is None:
-            self.pr_sel = PresenceDlg()
-
-            # Dismiss the dialog immediately when the user selects a status
-            # (optimistic close) so the UI responds without waiting for the
-            # server round-trip.  The POST and any repost logic continue in
-            # the background through change_handler.
-            dlg = self.pr_sel
-            post_status = self.ids.change_handler.post_status
-
-            def _request_and_close(status, _message=None):
-                post_status(status)
-                dlg.dismiss()
-
-            self.pr_sel.request_callback = _request_and_close
-
-            self.pr_sel.screensaver = self.screensaver
-            self.bind(screensaver=self.pr_sel.setter('screensaver'))
-
-            self.pr_sel.handle_self = self.handle_self
-            self.bind(handle_self=self.pr_sel.setter('handle_self'))
-
-            self.pr_sel.contacts = self.contacts
-            self.bind(contacts=self.pr_sel.setter('contacts'))
-
-            self.pr_sel.presence_list = self.presence_list
-            self.bind(presence_list=self.pr_sel.setter('presence_list'))
-
-            self.pr_sel.tracked_entries = self.ids.presence_tracker.tracked_entries
-            self.ids.presence_tracker.bind(tracked_entries=self.pr_sel.setter('tracked_entries'))
-
-            self.pr_sel.requested_status = self.ids.change_handler.requested_status
-            self.ids.change_handler.bind(requested_status=self.pr_sel.setter('requested_status'))
-
-            self.pr_sel.active_presence = self.active_presence
-            self.bind(active_presence=self.pr_sel.setter('active_presence'))
-
-            self.pr_sel.requested_status = self.ids.change_handler.requested_status
-            self.pr_sel.bind(requested_status=self.ids.change_handler.setter('requested_status'))
-
-            self.pr_sel.open()
-
-            # Lazily fetch history after the dialog is open so it does not
-            # delay the dialog from appearing and being usable.
-            Clock.schedule_once(lambda dt: self.ids.history_fetcher.fetch_history())
-        else:
-            self.pr_sel.dismiss()
-            self.pr_sel = None
-
-    def close_popup(self):
-        sel = self.pr_sel
-        Clock.schedule_once(lambda dt: sel is None or sel.dismiss())
-
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
-            self.popup_handler()
+            if self.page_callback:
+                self.page_callback()
             return True
         return super(PresenceTrayWidget, self).on_touch_down(touch)
 
     def _on_active_presence(self, _instance, value):
-        if self.pr_sel is not None:
-            self.pr_sel.active_presence = value
-
         if value and value.status in self.presence_texts:
             self._presence_color = PresenceColor.color_for(value.status) if value else None
             self._presence_text = self.presence_texts.get(value.status, PresenceColor.absent_color_rgba) if value \
