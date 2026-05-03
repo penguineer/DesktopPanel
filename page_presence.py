@@ -89,8 +89,8 @@ Builder.load_string("""
             rgba: root._presence_color
         Line:
             rounded_rectangle: 
-                0, 0, \\
-                self.size[0], self.size[1], \\
+                0, 0, \
+                self.size[0], self.size[1], \
                 5
 
     BoxLayout:
@@ -123,7 +123,7 @@ Builder.load_string("""
                 size_hint_y: 0.5
                 
                 Label:
-                    text: root._displayed_presence.message \\
+                    text: root._displayed_presence.message \
                         if root._displayed_presence and root._displayed_presence.message else ''
                     font_size: 12
                     text_size: self.size
@@ -190,8 +190,8 @@ Builder.load_string("""
             rgba: root._presence_color
         Line:
             rounded_rectangle:
-                0, 0, \\
-                self.size[0], self.size[1], \\
+                0, 0, \
+                self.size[0], self.size[1], \
                 5
 
     BoxLayout:
@@ -425,14 +425,14 @@ Builder.load_string("""
             rgb: root.present_color_rgba
         Line:
             circle:
-                self.size[0] / 2, self.size[1] / 2, \\
-                selbtn_size*0.5+12, \\
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5+12, \
                 0, 90
             width: 4
         Line:
             rounded_rectangle: 
-                self.size[0] / 2 + 10, self.size[0] / 2 + 10 + 20, \\
-                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \\
+                self.size[0] / 2 + 10, self.size[0] / 2 + 10 + 20, \
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \
                 10
             width: 2
 
@@ -440,14 +440,14 @@ Builder.load_string("""
             rgb: root.occupied_color_rgba
         Line:
             circle:
-                self.size[0] / 2, self.size[1] / 2, \\
-                selbtn_size*0.5+12, \\
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5+12, \
                 90, 180
             width: 4
         Line:
             rounded_rectangle: 
-                self.size[0] / 2 + 10, 20, \\
-                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \\
+                self.size[0] / 2 + 10, 20, \
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \
                 10
             width: 2
 
@@ -455,14 +455,14 @@ Builder.load_string("""
             rgb: root.absent_color_rgba
         Line:
             circle:
-                self.size[0] / 2, self.size[1] / 2, \\
-                selbtn_size*0.5+12, \\
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5+12, \
                 180, 270
             width: 4
         Line:
             rounded_rectangle: 
-                0, 20, \\
-                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \\
+                0, 20, \
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \
                 10
             width: 2
 
@@ -470,14 +470,14 @@ Builder.load_string("""
             rgb: root.away_color_rgba
         Line:
             circle:
-                self.size[0] / 2, self.size[1] / 2, \\
-                selbtn_size*0.5+12, \\
+                self.size[0] / 2, self.size[1] / 2, \
+                selbtn_size*0.5+12, \
                 270, 360
             width: 4
         Line:
             rounded_rectangle: 
-                0, self.size[0] / 2 + 10 + 20, \\
-                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \\
+                0, self.size[0] / 2 + 10 + 20, \
+                self.size[0] / 2 - 10, self.size[1] / 2 - 10 - 20, \
                 10
             width: 2
 
@@ -486,19 +486,19 @@ Builder.load_string("""
             rgb: root.background_color
         Line:
             points:
-                self.size[0] / 2, 0, \\
+                self.size[0] / 2, 0, \
                 self.size[0] / 2, self.size[1]
             width: 8     
             cap: 'none'
         Line:
             points:
-                0, self.size[1] / 2, \\
+                0, self.size[1] / 2, \
                 self.size[0], self.size[1] / 2
             width: 8     
             cap: 'none'
         Line:
             circle:
-                self.size[0] / 2, self.size[1] / 2, \\
+                self.size[0] / 2, self.size[1] / 2, \
                 selbtn_size*0.5
             width: 12
 
@@ -664,8 +664,8 @@ Builder.load_string("""
             rgba: root._presence_color
         Line:
             rounded_rectangle: 
-                0, bottom, \\
-                self.size[0], self.size[1]-top-bottom, \\
+                0, bottom, \
+                self.size[0], self.size[1]-top-bottom, \
                 radius
             width: 1
 
