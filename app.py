@@ -19,7 +19,7 @@ from page_presence import PresencePage, PresenceTrayWidget
 from spacestatus import SpaceStatusWidget
 from page_system import SystemPage
 from reloadable_json import JsonObserver
-from statusbar import DateTimeDisplay
+from datetime_display import DateTimeDisplay
 
 from kivy import Logger
 from kivy.config import Config
