@@ -109,14 +109,14 @@ class TabbedPanelApp(App):
         self.mqttc = mqtt.MqttClient()
         self.mqttc.conf = self.conf
         ca.mqttc = self.mqttc
-        ca.status_bar.tray_bar.register_widget(self.mqttc)
+        ca.status_bar.register_tray_item(self.mqttc)
 
         self.amqp_widget = amqp.AmqpWidget()
         self.amqp_widget.conf = self.conf.get("amqp", None) if self.conf else None
         self.amqp_widget.add_command_handler("test", command_log)
         self.amqp_widget.add_command_handler("screenshot", command_screenshot)
         self.amqp_widget.add_command_handler("show page", self._schedule_show_page)
-        ca.status_bar.tray_bar.register_widget(self.amqp_widget)
+        ca.status_bar.register_tray_item(self.amqp_widget)
 
         system_page.amqp_widget = self.amqp_widget
 

@@ -80,27 +80,6 @@ class DateTimeDisplay(RelativeLayout):
 
 
 Builder.load_string("""
-<TrayBar>:
-    StackLayout:
-        id: stack
-        orientation: 'tb-rl'
-        size_hint: None, 1
-        spacing: 5
-""")
-
-
-class TrayBar(RelativeLayout):
-    def __init__(self, **kwargs):
-        super(RelativeLayout, self).__init__(**kwargs)
-
-    def register_widget(self, widget):
-        widget.size_hint = (None, 1)
-        widget.size[1] = 0
-        self.ids.stack.add_widget(widget)
-        self.do_layout()
-
-
-Builder.load_string("""
 <TrayIcon>:
     size_hint: None, None
     size: 32, 48
@@ -166,9 +145,12 @@ Builder.load_string("""
             # This is a placeholder to stretch out the status bar
             size_hint_x: 1
 
-        TrayBar:
-            size_hint_x: None
-            id: tray_bar
+        StackLayout:
+            id: right_panel
+            orientation: 'tb-rl'
+            size_hint: None, 1
+            width: self.minimum_width
+            spacing: 5
 """)
 
 
@@ -186,9 +168,14 @@ class StatusBar(RelativeLayout):
         self.bind(mqttc=self._on_mqttc)
         self.bind(screensaver=self._on_screensaver)
 
-    @property
-    def tray_bar(self):
-        return self.ids.tray_bar
+    def register_tray_item(self, widget):
+        """Register a widget on the right side of the status bar (tray area).
+
+        Widgets are stacked from right to left as they are added.
+        """
+        widget.size_hint = (None, 1)
+        widget.size[1] = 0
+        self.ids.right_panel.add_widget(widget)
 
     def register_status_item(self, widget, conf_lambda=None):
         """Register a widget in the dynamic status bar item area.
