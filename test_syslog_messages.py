@@ -160,15 +160,15 @@ class TestEntryHeightHelpers:
     def test_one_char_over_boundary_is_two_lines(self):
         assert _msg_lines('x' * (_ENTRY_CHARS_PER_LINE + 1)) == 2
 
-    def test_long_message_capped_at_three_lines(self):
-        assert _msg_lines('x' * (_ENTRY_CHARS_PER_LINE * 10)) == 3
+    def test_long_message_not_capped(self):
+        assert _msg_lines('x' * (_ENTRY_CHARS_PER_LINE * 10)) == 10
 
     def test_entry_height_one_line(self):
         expected = _ENTRY_MIN_HEIGHT
         assert _entry_height('short') == expected
 
-    def test_entry_height_three_lines(self):
-        expected = _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + 3 * _ENTRY_LINE_HEIGHT
+    def test_entry_height_ten_lines(self):
+        expected = _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + 10 * _ENTRY_LINE_HEIGHT
         assert _entry_height('x' * (_ENTRY_CHARS_PER_LINE * 10)) == expected
 
 

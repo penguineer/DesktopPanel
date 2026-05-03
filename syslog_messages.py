@@ -61,10 +61,10 @@ _ENTRY_MIN_HEIGHT = (_ENTRY_PADDING_V + _ENTRY_META_HEIGHT
 
 
 def _msg_lines(text):
-    """Estimate wrapped line count for a message, capped at 3."""
+    """Estimate wrapped line count for a message."""
     if not text:
         return 1
-    return min(3, max(1, -(-len(text) // _ENTRY_CHARS_PER_LINE)))
+    return max(1, -(-len(text) // _ENTRY_CHARS_PER_LINE))
 
 
 def _entry_height(text):
@@ -219,7 +219,7 @@ Builder.load_string("""
         Color:
             rgba: 77/256.0, 77/256.0, 76/256.0, 1
         Line:
-            points: self.pos[0]+4, self.pos[1], self.pos[0] + self.size[0]-4, self.pos[1]
+            points: self.pos[0]+4, self.pos[1]+4, self.pos[0] + self.size[0]-4, self.pos[1]+4
 
     BoxLayout:
         orientation: 'horizontal'
@@ -246,9 +246,10 @@ Builder.load_string("""
             halign: 'left'
             valign: 'center'
             text_size: self.size
-            size_hint_x: 1
+            size_hint_x: None
+            width: 90
             shorten: True
-            shorten_from: 'right'
+            shorten_from: 'center'
 
         Label:
             text: root.msg_program + ' (' + root.msg_facility + ')'
