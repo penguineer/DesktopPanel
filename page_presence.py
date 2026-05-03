@@ -5,6 +5,12 @@ from kivy.properties import ObjectProperty, StringProperty, ListProperty, DictPr
 
 import globalcontent
 
+
+def _noop_request_callback(*_args):
+    """Default no-op presence request callback (replaced at runtime by app.py)."""
+    pass
+
+
 Builder.load_string("""
 #:import PresenceHistoryList presence_ui.PresenceHistoryList
 #:import PresenceSelector presence_ui.PresenceSelector
@@ -33,7 +39,7 @@ Builder.load_string("""
             size_hint: [None, None]
             active_status: root.active_presence.status if root.active_presence else "unknown"
             requested_status: root.requested_status
-            request_callback: root.request_callback if root.request_callback else lambda *a: None
+            request_callback: root.request_callback
 """)
 
 
@@ -46,4 +52,4 @@ class PresencePage(globalcontent.ContentPage):
     presence_list = ListProperty()
     tracked_entries = ListProperty()
 
-    request_callback = ObjectProperty(None, allownone=True)
+    request_callback = ObjectProperty(_noop_request_callback)

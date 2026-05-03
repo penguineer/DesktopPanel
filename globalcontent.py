@@ -132,6 +132,12 @@ class ContentPage(RelativeLayout):
         self._btn = None
 
     def create_context_button(self, length):
+        """Create a :class:`ContextButton` for this page.
+
+        The returned button has no ``page_callback`` set; the caller (typically
+        :class:`PageRouter`) is responsible for wiring the callback immediately
+        after creation.
+        """
         self.btn = ContextButton(icon_path=self.icon,
                                  size=(length, length))
         return self.btn
@@ -215,7 +221,7 @@ class ContextButton(Button):
         self.bind(on_press=self._on_press_dispatch)
 
     def _on_press_dispatch(self, _instance):
-        if self.page_callback:
+        if self.page_callback and callable(self.page_callback):
             self.page_callback()
 
 

@@ -138,7 +138,7 @@ class TrayIcon(RelativeLayout):
         super(RelativeLayout, self).__init__(**kwargs)
 
     def on_touch_down(self, touch):
-        if self.page_callback and self.collide_point(*touch.pos):
+        if self.page_callback and callable(self.page_callback) and self.collide_point(*touch.pos):
             self.page_callback()
             return True
         return super(TrayIcon, self).on_touch_down(touch)
