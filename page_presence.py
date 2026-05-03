@@ -877,7 +877,7 @@ Builder.load_string("""
     AnchorLayout:
         anchor_x: 'left'
         anchor_y: 'top'
-        padding: [8, 20, 8, 8]
+        padding: [8, 35, 8, 8]
 
         PresenceHistoryList:
             size: 340, 400
