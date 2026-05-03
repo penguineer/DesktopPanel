@@ -455,7 +455,7 @@ class GlobalContentArea(AnchorLayout):
 
     def _register_bar_widget(self, widget, box_id, conf_lambda=None):
         """Add *widget* to the named status bar box and wire configuration."""
-        widget.size_hint = (None, 1)
+        widget.size_hint_x = None
         self._status_items.append({'widget': widget, 'conf_lambda': conf_lambda})
         self.ids[box_id].add_widget(widget)
         if conf_lambda is not None and hasattr(widget, 'conf'):
