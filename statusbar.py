@@ -1,15 +1,10 @@
 from datetime import datetime
 
-from kivy.factory import Factory
 from kivy.lang import Builder
 
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.properties import StringProperty, ColorProperty, ObjectProperty, DictProperty
 from kivy.clock import Clock
-
-# Deferred registration avoids a circular import:
-#   statusbar → page_presence → globalcontent → statusbar
-Factory.register('PresenceTrayWidget', module='page_presence')
 
 Builder.load_string("""
 <DateTimeDisplay>:
@@ -150,8 +145,6 @@ class TrayIcon(RelativeLayout):
 
 
 Builder.load_string("""
-#:import SpaceStatusWidget spacestatus.SpaceStatusWidget
-
 <StatusBar>:
     BoxLayout:
         orientation: 'horizontal'
@@ -162,15 +155,12 @@ Builder.load_string("""
         DateTimeDisplay:
             size_hint_x: None
 
-        PresenceTrayWidget:
-            id: presence
-            mqttc: root.mqttc
-            screensaver: root.screensaver
-            size_hint_x: None
-            
-        SpaceStatusWidget:
-            id: spacestatus
-            size_hint_x: None
+        StackLayout:
+            id: status_items
+            orientation: 'lr-tb'
+            size_hint: None, 1
+            width: self.minimum_width
+            spacing: 10
 
         Widget:
             # This is a placeholder to stretch out the status bar
@@ -188,14 +178,54 @@ class StatusBar(RelativeLayout):
     screensaver = ObjectProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
+        self._status_items = []
+
         super(RelativeLayout, self).__init__(**kwargs)
 
         self.bind(conf=self._on_conf)
+        self.bind(mqttc=self._on_mqttc)
+        self.bind(screensaver=self._on_screensaver)
 
     @property
     def tray_bar(self):
         return self.ids.tray_bar
 
+    def register_status_item(self, widget, conf_lambda=None):
+        """Register a widget in the dynamic status bar item area.
+
+        The widget is added to the left portion of the status bar (after the
+        clock, before the spacer).  If *conf_lambda* is provided it is called
+        with the current conf dict whenever conf changes; the result is assigned
+        to ``widget.conf``.  The widget also receives the current ``mqttc`` and
+        ``screensaver`` values if it exposes those properties, and will be kept
+        up to date as those values change.
+        """
+        widget.size_hint = (None, 1)
+        self._status_items.append({'widget': widget, 'conf_lambda': conf_lambda})
+        self.ids.status_items.add_widget(widget)
+
+        if conf_lambda is not None and hasattr(widget, 'conf'):
+            widget.conf = conf_lambda(self.conf) if self.conf else None
+        if hasattr(widget, 'mqttc'):
+            widget.mqttc = self.mqttc
+        if hasattr(widget, 'screensaver'):
+            widget.screensaver = self.screensaver
+
     def _on_conf(self, _instance, conf: dict) -> None:
-        self.ids.presence.conf = conf.get("presence", None) if conf else None
-        self.ids.spacestatus.conf = conf.get("spaceApi", None) if conf else None
+        for item in self._status_items:
+            conf_lambda = item['conf_lambda']
+            widget = item['widget']
+            if conf_lambda is not None and hasattr(widget, 'conf'):
+                widget.conf = conf_lambda(conf) if conf else None
+
+    def _on_mqttc(self, _instance, mqttc) -> None:
+        for item in self._status_items:
+            widget = item['widget']
+            if hasattr(widget, 'mqttc'):
+                widget.mqttc = mqttc
+
+    def _on_screensaver(self, _instance, screensaver) -> None:
+        for item in self._status_items:
+            widget = item['widget']
+            if hasattr(widget, 'screensaver'):
+                widget.screensaver = screensaver

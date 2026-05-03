@@ -15,7 +15,8 @@ import mqtt
 import globalcontent
 from page_gtd import GtdPage
 from page_home import HomePage
-from page_presence import PresencePage
+from page_presence import PresencePage, PresenceTrayWidget
+from spacestatus import SpaceStatusWidget
 from page_system import SystemPage
 from reloadable_json import JsonObserver
 
@@ -53,6 +54,7 @@ class TabbedPanelApp(App):
         self.ca = None
         self.config_obs = None
         self.amqp_widget = None
+        self.presence_tray = None
 
         self.bind(conf_path=self._on_conf_path)
         self.bind(conf=self._on_conf)
@@ -118,6 +120,16 @@ class TabbedPanelApp(App):
 
         system_page.amqp_widget = self.amqp_widget
 
+        self.presence_tray = PresenceTrayWidget()
+        ca.status_bar.register_status_item(
+            self.presence_tray,
+            conf_lambda=lambda conf: conf.get("presence", None))
+
+        spacestatus = SpaceStatusWidget()
+        ca.status_bar.register_status_item(
+            spacestatus,
+            conf_lambda=lambda conf: conf.get("spaceApi", None))
+
         presence_page = PresencePage()
         Clock.schedule_once(lambda dt: self._register_presence_page(ca, presence_page))
 
@@ -126,9 +138,8 @@ class TabbedPanelApp(App):
 
     def _register_presence_page(self, ca, presence_page):
         """Wire the PresencePage to the PresenceTrayWidget and register it with the router."""
-        presence = ca.status_bar.ids.presence
-        presence.register_presence_page(presence_page)
-        ca.register_border_button(presence, presence_page)
+        self.presence_tray.register_presence_page(presence_page)
+        ca.register_border_button(self.presence_tray, presence_page)
 
     def on_stop(self):
         if self.config_obs is not None:
