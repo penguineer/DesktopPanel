@@ -134,9 +134,9 @@ Builder.load_string("""
         DateTimeDisplay:
             size_hint_x: None
 
-        StackLayout:
+        BoxLayout:
             id: status_items
-            orientation: 'lr-tb'
+            orientation: 'horizontal'
             size_hint: None, 1
             width: self.minimum_width
             spacing: 10
