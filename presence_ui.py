@@ -739,7 +739,6 @@ Builder.load_string("""
         id: change_handler
         publishers: [pingtech_presence, mqtt_presence]
         active_presence: presence_receiver.active_presence
-        retrieval_trigger: root.close_popup
         repost_timeout: 5 #  repost timeout [s] to fix race conditions with multiple clients
 
     PresenceTracker:
@@ -820,8 +819,18 @@ class PresenceTrayWidget(RelativeLayout):
         if self.pr_sel is None:
             self.pr_sel = PresenceDlg()
 
-            self.pr_sel.request_callback = self.ids.change_handler.post_status
-            # This cannot change
+            # Dismiss the dialog immediately when the user selects a status
+            # (optimistic close) so the UI responds without waiting for the
+            # server round-trip.  The POST and any repost logic continue in
+            # the background through change_handler.
+            dlg = self.pr_sel
+            post_status = self.ids.change_handler.post_status
+
+            def _request_and_close(status, _message=None):
+                post_status(status)
+                dlg.dismiss()
+
+            self.pr_sel.request_callback = _request_and_close
 
             self.pr_sel.screensaver = self.screensaver
             self.bind(screensaver=self.pr_sel.setter('screensaver'))
@@ -857,7 +866,8 @@ class PresenceTrayWidget(RelativeLayout):
             self.pr_sel = None
 
     def close_popup(self):
-        Clock.schedule_once(lambda dt: self.pr_sel is None or self.pr_sel.dismiss())
+        sel = self.pr_sel
+        Clock.schedule_once(lambda dt: sel is None or sel.dismiss())
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
