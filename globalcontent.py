@@ -72,9 +72,6 @@ class PageRouter(object):
         :returns: ``True`` if the page was found and switched to.
         """
         page = self._pages_by_handle.get(handle)
-        if page is None:
-            return False
-
         return self.switch_to_page(page, trip_screensaver=trip_screensaver)
 
     def switch_to_page(self, page, trip_screensaver: bool = True):
@@ -86,6 +83,9 @@ class PageRouter(object):
             silently without affecting the screensaver.
         :returns: ``True`` if the page was found and switched to.
         """
+
+        if page is None:
+            return False
 
         if trip_screensaver and self._on_wake_screensaver:
             self._on_wake_screensaver()
