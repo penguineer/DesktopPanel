@@ -156,7 +156,7 @@ class TabbedPanelApp(App):
     def _schedule_show_page(self, _cmd, args):
         handle = args.get("page", None)
         if handle:
-            Clock.schedule_once(lambda dt: self.ca.router.switch_to(handle))
+            Clock.schedule_once(lambda dt: self.ca.router.switch_to_label(handle))
 
     def schedule_update_configuration(self, conf):
         Clock.schedule_once(lambda dt: self.setter('conf')(self, conf))
