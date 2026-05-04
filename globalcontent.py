@@ -75,6 +75,9 @@ class PageRouter(object):
         if page is None:
             return False
 
+        if trip_screensaver and self._on_wake_screensaver:
+            self._on_wake_screensaver()
+
         if self._current_page is page:
             return True
 
