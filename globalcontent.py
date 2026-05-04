@@ -46,23 +46,23 @@ class PageRouter(object):
         self._pages_by_handle[handle] = page
 
         cbtn = page.create_context_button(length=self._tab_height)
-        cbtn.page_callback = lambda h=handle: self.switch_to(h)
+        cbtn.page_callback = lambda h=handle: self.switch_to_label(h)
         self._context_buttons_panel.add_widget(cbtn)
 
         if self._current_page is None:
-            self.switch_to(handle)
+            self.switch_to_label(handle)
 
     def register_border_button(self, widget, page=None):
         """Register a border (tray) widget, optionally wiring it to a page."""
         if page is not None:
             handle = page.label
             self._pages_by_handle[handle] = page
-            widget.page_callback = lambda h=handle: self.switch_to(h)
+            widget.page_callback = lambda h=handle: self.switch_to_label(h)
 
             if self._current_page is None:
-                self.switch_to(handle)
+                self.switch_to_label(handle)
 
-    def switch_to(self, handle: str, trip_screensaver: bool = True) -> bool:
+    def switch_to_label(self, handle: str, trip_screensaver: bool = True) -> bool:
         """Switch to the page identified by *handle*.
 
         :param handle: The page label to switch to.
@@ -72,8 +72,23 @@ class PageRouter(object):
         :returns: ``True`` if the page was found and switched to.
         """
         page = self._pages_by_handle.get(handle)
+        return self.switch_to_page(page, trip_screensaver=trip_screensaver)
+
+    def switch_to_page(self, page, trip_screensaver: bool = True):
+        """Switch to the page.
+
+        :param page: The page to switch to.
+        :param trip_screensaver: When ``True`` (default), wake the screensaver
+            so the screen becomes visible.  Pass ``False`` to change the page
+            silently without affecting the screensaver.
+        :returns: ``True`` if the page was found and switched to.
+        """
+
         if page is None:
             return False
+
+        if trip_screensaver and self._on_wake_screensaver:
+            self._on_wake_screensaver()
 
         if self._current_page is page:
             return True
@@ -90,14 +105,7 @@ class PageRouter(object):
         if self._on_page_changed:
             self._on_page_changed(page)
 
-        if trip_screensaver and self._on_wake_screensaver:
-            self._on_wake_screensaver()
-
         return True
-
-    def switch_to_page(self, page, trip_screensaver: bool = True):
-        """Convenience: switch by page object rather than handle string."""
-        return self.switch_to(page.label, trip_screensaver=trip_screensaver)
 
 
 class ContentPage(RelativeLayout):
@@ -436,7 +444,7 @@ class GlobalContentArea(AnchorLayout):
 
     def set_page(self, page):
         if 0 <= page < len(self._pages):
-            self._router.switch_to(self._pages[page].label)
+            self._router.switch_to_label(self._pages[page].label)
 
     def register_content(self, page):
         self._pages.append(page)
