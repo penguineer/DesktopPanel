@@ -75,6 +75,18 @@ class PageRouter(object):
         if page is None:
             return False
 
+        return self.switch_to_page(page, trip_screensaver=trip_screensaver)
+
+    def switch_to_page(self, page, trip_screensaver: bool = True):
+        """Switch to the page.
+
+        :param page: The page to switch to.
+        :param trip_screensaver: When ``True`` (default), wake the screensaver
+            so the screen becomes visible.  Pass ``False`` to change the page
+            silently without affecting the screensaver.
+        :returns: ``True`` if the page was found and switched to.
+        """
+
         if trip_screensaver and self._on_wake_screensaver:
             self._on_wake_screensaver()
 
@@ -93,14 +105,7 @@ class PageRouter(object):
         if self._on_page_changed:
             self._on_page_changed(page)
 
-        if trip_screensaver and self._on_wake_screensaver:
-            self._on_wake_screensaver()
-
         return True
-
-    def switch_to_page(self, page, trip_screensaver: bool = True):
-        """Convenience: switch by page object rather than handle string."""
-        return self.switch_to_label(page.label, trip_screensaver=trip_screensaver)
 
 
 class ContentPage(RelativeLayout):
