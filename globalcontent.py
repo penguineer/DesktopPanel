@@ -20,11 +20,13 @@ class PageRouter(object):
     recorded for a future "jump back" feature.
     """
 
-    def __init__(self, content_panel, tab_height, context_buttons_panel, on_page_changed=None):
+    def __init__(self, content_panel, tab_height, context_buttons_panel, on_page_changed=None,
+                 on_wake_screensaver=None):
         self._content_panel = content_panel
         self._tab_height = tab_height
         self._context_buttons_panel = context_buttons_panel
         self._on_page_changed = on_page_changed
+        self._on_wake_screensaver = on_wake_screensaver
 
         self._pages_by_handle = {}
         self._current_page = None
@@ -60,9 +62,13 @@ class PageRouter(object):
             if self._current_page is None:
                 self.switch_to(handle)
 
-    def switch_to(self, handle: str) -> bool:
+    def switch_to(self, handle: str, trip_screensaver: bool = True) -> bool:
         """Switch to the page identified by *handle*.
 
+        :param handle: The page label to switch to.
+        :param trip_screensaver: When ``True`` (default), wake the screensaver
+            so the screen becomes visible.  Pass ``False`` to change the page
+            silently without affecting the screensaver.
         :returns: ``True`` if the page was found and switched to.
         """
         page = self._pages_by_handle.get(handle)
@@ -84,11 +90,14 @@ class PageRouter(object):
         if self._on_page_changed:
             self._on_page_changed(page)
 
+        if trip_screensaver and self._on_wake_screensaver:
+            self._on_wake_screensaver()
+
         return True
 
-    def switch_to_page(self, page):
+    def switch_to_page(self, page, trip_screensaver: bool = True):
         """Convenience: switch by page object rather than handle string."""
-        return self.switch_to(page.label)
+        return self.switch_to(page.label, trip_screensaver=trip_screensaver)
 
 
 class ContentPage(RelativeLayout):
@@ -383,6 +392,7 @@ class GlobalContentArea(AnchorLayout):
             tab_height=self.tab_height,
             context_buttons_panel=self.ids.ContextButtons,
             on_page_changed=lambda page: setattr(self, '_current_page', page),
+            on_wake_screensaver=self._wake_screensaver,
         )
 
         self.bind(conf=self._on_conf)
@@ -392,6 +402,10 @@ class GlobalContentArea(AnchorLayout):
         # Wake up the screensaver on every touch event
         # Blocks the event if the screen saver is active, so that the user is not poking in the dark (literally)
         Window.bind(on_touch_down=lambda i, e: self.ids.screensaver.wake_up())
+
+    def _wake_screensaver(self) -> None:
+        if self.screensaver:
+            self.screensaver.wake_up()
 
     def _on_conf(self, _instance, conf: dict) -> None:
         for page in self._pages:
