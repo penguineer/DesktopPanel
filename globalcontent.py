@@ -12,7 +12,7 @@ from kivy.uix.button import Button
 from kivy.animation import Animation
 from kivy.graphics import Color, Rectangle, Line, InstructionGroup
 
-from screenshot import capture_widget_texture, ForegroundCropStrategy
+from screenshot import capture_widget_texture, SalientScaleStrategy
 
 
 class PageRouter(EventDispatcher):
@@ -404,9 +404,10 @@ class NavBackWidget(Button):
         :attr:`_pending_screenshot` and consumed by the next
         :meth:`_on_page_selected` call.
 
-        Uses :class:`~screenshot.ForegroundCropStrategy` so that the thumbnail
-        shows a tight crop of the page's foreground colours rather than a small
-        icon lost in a large black background.
+        Uses :class:`~screenshot.SalientScaleStrategy` so that the thumbnail
+        captures at full native resolution then uses max-luminance pooling to
+        downscale: foreground colour landmarks remain at their correct relative
+        positions and are not swamped by the dark background.
         """
         if self._going_back:
             self._pending_screenshot = None
@@ -419,7 +420,7 @@ class NavBackWidget(Button):
             old_page,
             self._THUMB_CAPTURE_WIDTH,
             max(1, int(self._THUMB_CAPTURE_WIDTH * self._FALLBACK_THUMB_ASPECT)),
-            strategy=ForegroundCropStrategy()
+            strategy=SalientScaleStrategy()
         )
 
     def _on_page_selected(self, _instance, handle):

@@ -4,7 +4,7 @@ import pytest
 from screenshot import (
     ScaleStrategy,
     AspectFitStrategy,
-    ForegroundCropStrategy,
+    SalientScaleStrategy,
     capture_widget_texture,
 )
 
@@ -35,15 +35,15 @@ class TestAspectFitStrategy:
         assert AspectFitStrategy().capture(_MockWidget(width=100, height=0), 100, 100) is None
 
 
-class TestForegroundCropStrategy:
+class TestSalientScaleStrategy:
     def test_none_widget_returns_none(self):
-        assert ForegroundCropStrategy().capture(None, 100, 100) is None
+        assert SalientScaleStrategy().capture(None, 100, 100) is None
 
     def test_zero_width_returns_none(self):
-        assert ForegroundCropStrategy().capture(_MockWidget(width=0, height=100), 100, 100) is None
+        assert SalientScaleStrategy().capture(_MockWidget(width=0, height=100), 100, 100) is None
 
     def test_zero_height_returns_none(self):
-        assert ForegroundCropStrategy().capture(_MockWidget(width=100, height=0), 100, 100) is None
+        assert SalientScaleStrategy().capture(_MockWidget(width=100, height=0), 100, 100) is None
 
 
 class TestCaptureWidgetTexture:
