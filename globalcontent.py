@@ -349,18 +349,20 @@ class NavBackWidget(Button):
 
         Pushes the previous page onto the history stack when navigating to a
         different page.  Does nothing during a :meth:`go_back` traversal.
-        Consecutive duplicate entries (same handle at the top of the stack) are
-        never pushed.
+        If the top of the stack already holds the same handle that is being
+        pushed, it is popped first so that the handle is always pushed exactly
+        once — preventing two consecutive identical entries.
         """
         if self._going_back:
             self._current_handle = handle
             return
 
         if self._current_handle is not None and self._current_handle != handle:
-            if not self._history or self._history[-1] != self._current_handle:
-                self._history.append(self._current_handle)
-                if len(self._history) > self.STACK_MAX_DEPTH:
-                    self._history.pop(0)
+            if self._history and self._history[-1] == self._current_handle:
+                self._history.pop()
+            self._history.append(self._current_handle)
+            if len(self._history) > self.STACK_MAX_DEPTH:
+                self._history.pop(0)
 
         self._current_handle = handle
         self.has_history = bool(self._history)

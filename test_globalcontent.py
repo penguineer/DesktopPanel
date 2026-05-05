@@ -283,18 +283,15 @@ class TestNoDuplicatesOnStack:
         return router, nav
 
     def test_no_consecutive_duplicate_push(self):
-        """If the top of the stack already holds the page being pushed, skip the push."""
+        """If the top of the stack already holds the page being pushed, it is
+        popped first and then the page is pushed again — so only one entry
+        for that handle remains at the top of the stack."""
         _, nav = self._make_wired()
         # Manually seed history with 'a' on top, then simulate a push of 'a' again.
-        nav._current_handle = 'b'
-        nav._history = ['a']
-        # Calling _on_page_selected as if we navigated from 'b' to 'a' should NOT
-        # push 'b' because… wait, this test exercises the guard for the case where
-        # _history[-1] == _current_handle (both are 'a') when navigating away.
         nav._current_handle = 'a'
         nav._history = ['a']
-        # Now navigate to 'b' — the top of stack is already 'a' == _current_handle,
-        # so 'a' must NOT be pushed again.
+        # Navigate to 'b': 'a' is popped from the stack and then re-pushed, so
+        # the stack still contains exactly one 'a'.
         nav._on_page_selected(None, 'b')
         assert nav._history == ['a']
 
