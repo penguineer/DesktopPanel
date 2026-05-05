@@ -12,7 +12,7 @@ from kivy.uix.button import Button
 from kivy.animation import Animation
 from kivy.graphics import Color, Rectangle, Line, InstructionGroup
 
-from screenshot import capture_widget_texture
+from screenshot import capture_widget_texture, ForegroundCropStrategy
 
 
 class PageRouter(EventDispatcher):
@@ -295,11 +295,13 @@ Builder.load_string("""
     canvas.after:
         Color:
             rgba: [249/256, 176/256, 0/256, 1] if root.has_history else [77/256, 77/256, 76/256, 1]
-        Triangle:
-            points:
-                root.x + root.width * 0.65, root.y + root.height * 0.25, \
-                root.x + root.width * 0.25, root.y + root.height * 0.50, \
-                root.x + root.width * 0.65, root.y + root.height * 0.75
+        Line:
+            width: 2.5
+            cap: 'round'
+            joint: 'round'
+            points: root.x + root.width * 0.65, root.y + root.height * 0.88, \
+                root.x + root.width * 0.30, root.y + root.height * 0.72, \
+                root.x + root.width * 0.65, root.y + root.height * 0.56
 """)
 
 
@@ -402,10 +404,9 @@ class NavBackWidget(Button):
         :attr:`_pending_screenshot` and consumed by the next
         :meth:`_on_page_selected` call.
 
-        Thumbnails are captured at :attr:`_THUMB_CAPTURE_WIDTH` pixels wide
-        (preserving aspect ratio) so that OpenGL texture filtering produces
-        high-quality results when the texture is displayed at the smaller
-        fill-meter slot size.
+        Uses :class:`~screenshot.ForegroundCropStrategy` so that the thumbnail
+        shows a tight crop of the page's foreground colours rather than a small
+        icon lost in a large black background.
         """
         if self._going_back:
             self._pending_screenshot = None
@@ -414,15 +415,12 @@ class NavBackWidget(Button):
             self._pending_screenshot = None
             return
 
-        # Capture at a higher resolution than the display slot so that OpenGL
-        # bi-linear filtering produces a good-looking scaled-down thumbnail.
-        capture_w = self._THUMB_CAPTURE_WIDTH
-        if old_page.width > 0 and old_page.height > 0:
-            capture_h = max(1, int(capture_w * old_page.height / old_page.width))
-        else:
-            capture_h = int(capture_w * self._FALLBACK_THUMB_ASPECT)
-
-        self._pending_screenshot = capture_widget_texture(old_page, capture_w, capture_h)
+        self._pending_screenshot = capture_widget_texture(
+            old_page,
+            self._THUMB_CAPTURE_WIDTH,
+            max(1, int(self._THUMB_CAPTURE_WIDTH * self._FALLBACK_THUMB_ASPECT)),
+            strategy=ForegroundCropStrategy()
+        )
 
     def _on_page_selected(self, _instance, handle):
         """React to a :class:`PageRouter` ``on_page_selected`` event.
@@ -458,9 +456,10 @@ class NavBackWidget(Button):
         """Redraw the fill-meter thumbnail strip on the widget canvas.
 
         Each occupied slot is drawn as a scaled thumbnail rectangle at the
-        bottom of the widget.  Slots are separated by a 1-pixel dark line so
-        that individual entries are visually distinct.  The arrow (drawn in
-        ``canvas.after``) is always rendered on top of the fill meter.
+        bottom of the widget.  Slots are separated by a 1-pixel grey line so
+        that individual entries are visually distinct against the black
+        background.  The arrow (drawn in ``canvas.after``) is always rendered
+        on top of the fill meter.
         """
         if self._fill_meter_group is not None:
             self.canvas.remove(self._fill_meter_group)
@@ -473,12 +472,14 @@ class NavBackWidget(Button):
         n = self.STACK_MAX_DEPTH
         slot_w = self.width / n
 
-        # Thumbnail display height derived from the first texture's aspect ratio
+        # Thumbnail display height: derived from first texture's aspect ratio,
+        # but capped so the fill meter does not crowd the arrow area.
+        max_thumb_h = self.height * 0.4
         first = textures[0]
         if first.width > 0:
-            thumb_h = slot_w * first.height / first.width
+            thumb_h = min(slot_w * first.height / first.width, max_thumb_h)
         else:
-            thumb_h = slot_w * self._FALLBACK_THUMB_ASPECT  # fallback for 16:9 landscape
+            thumb_h = min(slot_w * self._FALLBACK_THUMB_ASPECT, max_thumb_h)
 
         group = InstructionGroup()
         for i, tex in enumerate(textures):
@@ -487,11 +488,12 @@ class NavBackWidget(Button):
             group.add(Color(1, 1, 1, 1))
             group.add(Rectangle(texture=tex, pos=(x, y), size=(slot_w, thumb_h)))
 
-        # Draw 1-pixel separator lines between occupied slots
+        # Grey separator lines between occupied slots (black background ≡ invisible)
         for i in range(1, len(textures)):
             x_sep = self.x + i * slot_w
-            group.add(Color(0, 0, 0, 1))
-            group.add(Line(points=[x_sep, self.y, x_sep, self.y + thumb_h], width=self._SLOT_SEPARATOR_WIDTH))
+            group.add(Color(77 / 256, 77 / 256, 76 / 256, 1))
+            group.add(Line(points=[x_sep, self.y, x_sep, self.y + thumb_h],
+                           width=self._SLOT_SEPARATOR_WIDTH))
 
         self.canvas.add(group)
         self._fill_meter_group = group
