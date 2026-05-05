@@ -12,8 +12,6 @@ from kivy.uix.button import Button
 from kivy.animation import Animation
 from kivy.graphics import Color, Rectangle, Line, InstructionGroup
 
-from screenshot import capture_widget_texture, SalientScaleStrategy
-
 
 class PageRouter(EventDispatcher):
     """Routes page navigation by string handle.
@@ -294,32 +292,29 @@ Builder.load_string("""
     text: ''
     canvas.after:
         Color:
-            rgba: [249/256, 176/256, 0/256, 1] if root.has_history else [77/256, 77/256, 76/256, 1]
-        # Arrow shaft: horizontal line spanning the full widget width
+            rgba: [68/256, 53/256, 126/256, 1] if root.has_history else [77/256, 77/256, 76/256, 1]
+        # Filled left-pointing arrowhead
+        Triangle:
+            points: root.x + root.width * 0.20, root.y + root.height * 0.65, \
+                    root.x + root.width * 0.38, root.y + root.height * 0.77, \
+                    root.x + root.width * 0.38, root.y + root.height * 0.53
+        # Arrow shaft running from the arrowhead base to the right
         Line:
             width: 1.5
             cap: 'square'
-            points: root.x + root.width * 0.15, root.y + root.height * 0.65, \
-                    root.x + root.width * 0.88, root.y + root.height * 0.65
-        # Left-pointing chevron at the tip of the shaft
-        Line:
-            width: 2.5
-            cap: 'round'
-            joint: 'round'
-            points: root.x + root.width * 0.42, root.y + root.height * 0.80, \
-                    root.x + root.width * 0.15, root.y + root.height * 0.65, \
-                    root.x + root.width * 0.42, root.y + root.height * 0.50
+            points: root.x + root.width * 0.38, root.y + root.height * 0.65, \
+                    root.x + root.width * 0.80, root.y + root.height * 0.65
 """)
 
 
 class NavBackWidget(Button):
     """Navigation back button that owns and controls the page history stack.
 
-    Displays a visual back-navigation arrow.  The widget is active (yellow)
+    Displays a visual back-navigation arrow.  The widget is active (lilac)
     when the navigation stack contains history entries and inactive (grey)
     when the stack is exhausted.  A fill-meter strip at the bottom shows
-    scaled thumbnails of pages that have been pushed onto the stack, from
-    left to right.
+    a lilac slot for each occupied history entry and a grey slot for each
+    remaining empty capacity, up to :attr:`STACK_MAX_DEPTH`.
 
     Wire this widget to a :class:`PageRouter` by binding its callbacks to
     the router's events and setting :attr:`_switch_callback`::
@@ -332,13 +327,9 @@ class NavBackWidget(Button):
     STACK_MAX_DEPTH = 3
     """Maximum number of entries kept on the navigation history stack."""
 
-    # Width in pixels at which page thumbnails are captured.  A larger value
-    # gives better quality when displayed in the small fill-meter slots.
-    _THUMB_CAPTURE_WIDTH = 200
-
-    # Fallback inverse aspect ratio (height/width) used when the page or
-    # texture has no valid dimensions.  9/16 is the portrait reciprocal of the
-    # standard 16:9 landscape display used by the target hardware.
+    # Fallback inverse aspect ratio (height/width) used to size fill-meter slots
+    # when the Window dimensions are not yet available.  9/16 is the portrait
+    # reciprocal of the standard 16:9 landscape display used by the target hardware.
     _FALLBACK_THUMB_ASPECT = 9 / 16
 
     # Width in pixels of the gap drawn between fill-meter slots so that the
@@ -354,13 +345,16 @@ class NavBackWidget(Button):
 
     def __init__(self, **kwargs):
         self._history = []
-        self._screenshots = []      # parallel list of textures, one per _history entry
-        self._pending_screenshot = None
         self._going_back = False
         self._current_handle = None
         self._switch_callback = None
         self._fill_meter_group = None
         super().__init__(**kwargs)
+        # Read the real display aspect ratio (portrait h/w) once at startup so
+        # fill-meter slots reflect the actual screen proportions.  Falls back to
+        # the 16:9 default when Window dimensions are not yet available.
+        w, h = Window.width, Window.height
+        self._display_aspect = (h / w) if (w > 0 and h > 0) else self._FALLBACK_THUMB_ASPECT
         self.bind(size=self._redraw_fill_meter, pos=self._redraw_fill_meter)
 
     def on_press(self):
@@ -384,12 +378,8 @@ class NavBackWidget(Button):
 
         current = self._current_handle
         handle = self._history.pop()
-        if self._screenshots:
-            self._screenshots.pop()
         while handle == current and self._history:
             handle = self._history.pop()
-            if self._screenshots:
-                self._screenshots.pop()
 
         if handle == current:
             self.has_history = bool(self._history)
@@ -403,33 +393,8 @@ class NavBackWidget(Button):
         self._redraw_fill_meter()
         return result
 
-    def _on_before_page_switch(self, _instance, old_page, _new_page):
-        """Capture a thumbnail of *old_page* before it is removed from the tree.
-
-        Called by :class:`PageRouter` just before it removes the old page from
-        the content panel, so the widget is still fully rendered and FBO
-        capture works correctly.  The texture is stashed in
-        :attr:`_pending_screenshot` and consumed by the next
-        :meth:`_on_page_selected` call.
-
-        Uses :class:`~screenshot.SalientScaleStrategy` so that the thumbnail
-        captures at full native resolution then uses max-luminance pooling to
-        downscale: foreground colour landmarks remain at their correct relative
-        positions and are not swamped by the dark background.
-        """
-        if self._going_back:
-            self._pending_screenshot = None
-            return
-        if self._current_handle is None:
-            self._pending_screenshot = None
-            return
-
-        self._pending_screenshot = capture_widget_texture(
-            old_page,
-            self._THUMB_CAPTURE_WIDTH,
-            max(1, int(self._THUMB_CAPTURE_WIDTH * self._FALLBACK_THUMB_ASPECT)),
-            strategy=SalientScaleStrategy()
-        )
+    def _on_before_page_switch(self, _instance, _old_page, _new_page):
+        """No-op hook kept for PageRouter event-binding compatibility."""
 
     def _on_page_selected(self, _instance, handle):
         """React to a :class:`PageRouter` ``on_page_selected`` event.
@@ -447,15 +412,9 @@ class NavBackWidget(Button):
         if self._current_handle is not None and self._current_handle != handle:
             if self._history and self._history[-1] == self._current_handle:
                 self._history.pop()
-                if self._screenshots:
-                    self._screenshots.pop()
             self._history.append(self._current_handle)
-            self._screenshots.append(self._pending_screenshot)
-            self._pending_screenshot = None
             if len(self._history) > self.STACK_MAX_DEPTH:
                 self._history.pop(0)
-                if self._screenshots:
-                    self._screenshots.pop(0)
 
         self._current_handle = handle
         self.has_history = bool(self._history)
@@ -465,11 +424,10 @@ class NavBackWidget(Button):
         """Redraw the fill-meter slot strip on the widget canvas.
 
         All :attr:`STACK_MAX_DEPTH` slots are drawn at the bottom of the widget.
-        Occupied slots (history entries) are shown as yellow rectangles; empty
+        Occupied slots (history entries) are shown as lilac rectangles; empty
         slots are shown as dark-grey rectangles.  A narrow background-coloured
         gap separates each slot so the total slot count is always visible.  Slot
-        height is derived from the target display's aspect ratio so the slots
-        look like scaled page thumbnails.
+        height is derived from the real display aspect ratio captured at startup.
 
         The arrow (drawn in ``canvas.after``) is always rendered on top of the
         fill meter.
@@ -478,13 +436,16 @@ class NavBackWidget(Button):
             self.canvas.remove(self._fill_meter_group)
             self._fill_meter_group = None
 
+        if self.width <= 0:
+            return
+
         n = self.STACK_MAX_DEPTH
         gap = self._SLOT_SEPARATOR_WIDTH
         slot_w = (self.width - gap * (n - 1)) / n
 
-        # Slot height: page aspect ratio (landscape 16:9 → height/width = 9/16),
-        # capped so the fill meter does not crowd the arrow area.
-        thumb_h = min(slot_w * self._FALLBACK_THUMB_ASPECT, self.height * 0.4)
+        # Slot height: real display aspect ratio (portrait h/w), capped so the
+        # fill meter does not crowd the arrow area.
+        thumb_h = min(slot_w * self._display_aspect, self.height * 0.4)
 
         occupied = len(self._history)
 
@@ -493,8 +454,8 @@ class NavBackWidget(Button):
             x = self.x + i * (slot_w + gap)
             y = self.y
             if i < occupied:
-                # Occupied slot: yellow rectangle
-                group.add(Color(249 / 256, 176 / 256, 0 / 256, 1))
+                # Occupied slot: lilac rectangle
+                group.add(Color(68 / 256, 53 / 256, 126 / 256, 1))
             else:
                 # Empty slot: grey rectangle
                 group.add(Color(77 / 256, 77 / 256, 76 / 256, 1))
