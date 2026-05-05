@@ -1,4 +1,5 @@
 from kivy.core.window import Window
+from kivy.event import EventDispatcher
 from kivy.lang import Builder
 
 from kivy.uix.anchorlayout import AnchorLayout
@@ -11,32 +12,33 @@ from kivy.uix.button import Button
 from kivy.animation import Animation
 
 
-STACK_MAX_DEPTH = 5
-"""Maximum number of entries kept on the navigation history stack."""
-
-
-class PageRouter(object):
+class PageRouter(EventDispatcher):
     """Routes page navigation by string handle.
 
     Pages are identified by their ``label`` string (the handle).  Left-border
     pages get a :class:`ContextButton`; tray-area widgets can also be wired
-    to a page via :meth:`register_border_button`.  Navigation history is
-    tracked in a bounded stack; use :meth:`go_back` to return to the
-    previously active page.
+    to a page via :meth:`register_border_button`.
+
+    Dispatches the ``on_page_selected`` event whenever a page navigation is
+    requested, including re-selection of the currently active page.
     """
 
     def __init__(self, content_panel, tab_height, context_buttons_panel, on_page_changed=None,
-                 on_wake_screensaver=None, on_nav_stack_changed=None):
+                 on_wake_screensaver=None):
+        self.register_event_type('on_page_selected')
+        super().__init__()
+
         self._content_panel = content_panel
         self._tab_height = tab_height
         self._context_buttons_panel = context_buttons_panel
         self._on_page_changed = on_page_changed
         self._on_wake_screensaver = on_wake_screensaver
-        self._on_nav_stack_changed = on_nav_stack_changed
 
         self._pages_by_handle = {}
         self._current_page = None
-        self._history = []
+
+    def on_page_selected(self, handle):
+        """Default handler for the ``on_page_selected`` event (no-op)."""
 
     @property
     def current_page(self):
@@ -45,15 +47,6 @@ class PageRouter(object):
     @property
     def current_handle(self):
         return self._current_page.label if self._current_page else None
-
-    @property
-    def has_history(self):
-        """``True`` when the navigation stack has at least one entry."""
-        return len(self._history) > 0
-
-    def _notify_nav_stack(self):
-        if self._on_nav_stack_changed:
-            self._on_nav_stack_changed(self.has_history)
 
     def add_page(self, page):
         """Register a page with a :class:`ContextButton` in the left border."""
@@ -89,16 +82,13 @@ class PageRouter(object):
         page = self._pages_by_handle.get(handle)
         return self.switch_to_page(page, trip_screensaver=trip_screensaver)
 
-    def switch_to_page(self, page, trip_screensaver: bool = True, _push_history: bool = True):
+    def switch_to_page(self, page, trip_screensaver: bool = True):
         """Switch to the page.
 
         :param page: The page to switch to.
         :param trip_screensaver: When ``True`` (default), wake the screensaver
             so the screen becomes visible.  Pass ``False`` to change the page
             silently without affecting the screensaver.
-        :param _push_history: Internal flag.  When ``True`` (default), the
-            current page is pushed onto the navigation stack before switching.
-            Pass ``False`` when navigating back to avoid re-adding the page.
         :returns: ``True`` if the page was found and switched to.
         """
 
@@ -108,46 +98,21 @@ class PageRouter(object):
         if trip_screensaver and self._on_wake_screensaver:
             self._on_wake_screensaver()
 
-        if self._current_page is page:
-            return True
+        if self._current_page is not page:
+            if self._current_page is not None:
+                self._content_panel.remove_widget(self._current_page)
+                self._current_page.active = False
 
-        if self._current_page is not None:
-            self._content_panel.remove_widget(self._current_page)
-            self._current_page.active = False
-            if _push_history:
-                self._history.append(self._current_page.label)
-                if len(self._history) > STACK_MAX_DEPTH:
-                    self._history.pop(0)
+            self._current_page = page
+            page.active = True
+            self._content_panel.add_widget(page)
 
-        self._current_page = page
-        page.active = True
-        self._content_panel.add_widget(page)
+            if self._on_page_changed:
+                self._on_page_changed(page)
 
-        if self._on_page_changed:
-            self._on_page_changed(page)
-
-        if _push_history:
-            self._notify_nav_stack()
+        self.dispatch('on_page_selected', page.label)
 
         return True
-
-    def go_back(self) -> bool:
-        """Navigate to the previously visited page.
-
-        Pops one entry from the navigation stack and switches to that page
-        without pushing the current page back onto the stack.
-
-        :returns: ``True`` if navigation succeeded, ``False`` if the stack is
-            empty.
-        """
-        if not self._history:
-            return False
-
-        handle = self._history.pop()
-        page = self._pages_by_handle.get(handle)
-        result = self.switch_to_page(page, _push_history=False)
-        self._notify_nav_stack()
-        return result
 
 
 class ContentPage(RelativeLayout):
@@ -296,13 +261,23 @@ Builder.load_string("""
 
 
 class NavBackWidget(Button):
-    """Navigation back button that reflects and controls the page history stack.
+    """Navigation back button that owns and controls the page history stack.
 
     Displays a left-arrow indicator.  The widget is active (yellow) when the
     navigation stack contains history entries and inactive (grey) when the
-    stack is exhausted.  Pressing the widget calls :attr:`nav_callback` to
-    navigate to the previously active page.
+    stack is exhausted.
+
+    Wire this widget to a :class:`PageRouter` by binding its
+    :meth:`_on_page_selected` callback to the router's ``on_page_selected``
+    event and setting :attr:`_switch_callback` to the router's
+    ``switch_to_label`` method::
+
+        router.bind(on_page_selected=nav_back._on_page_selected)
+        nav_back._switch_callback = router.switch_to_label
     """
+
+    STACK_MAX_DEPTH = 5
+    """Maximum number of entries kept on the navigation history stack."""
 
     has_history = BooleanProperty(False)
     """``True`` when the navigation stack has at least one entry to go back to.
@@ -311,21 +286,54 @@ class NavBackWidget(Button):
     defaults to ``False``.
     """
 
-    nav_callback = ObjectProperty(None, allownone=True)
-    """Callable invoked when the widget is pressed and :attr:`has_history` is
-    ``True``.  Typically wired to :meth:`PageRouter.go_back`.
-
-    :attr:`nav_callback` is an :class:`~kivy.properties.ObjectProperty` and
-    defaults to ``None``.
-    """
-
     def __init__(self, **kwargs):
+        self._history = []
+        self._going_back = False
+        self._current_handle = None
+        self._switch_callback = None
         super().__init__(**kwargs)
-        self.bind(on_press=self._on_press_dispatch)
 
-    def _on_press_dispatch(self, _instance):
-        if self.has_history and self.nav_callback and callable(self.nav_callback):
-            self.nav_callback()
+    def on_press(self):
+        """Kivy event handler: navigate back when the stack is non-empty."""
+        if self.has_history:
+            self.go_back()
+
+    def go_back(self) -> bool:
+        """Navigate to the previously visited page.
+
+        Pops one entry from the navigation stack and switches to that page
+        without pushing the current page back onto the stack.
+
+        :returns: ``True`` if navigation succeeded, ``False`` if the stack is
+            empty.
+        """
+        if not self._history:
+            return False
+
+        handle = self._history.pop()
+        self._going_back = True
+        result = bool(self._switch_callback and self._switch_callback(handle))
+        self._going_back = False
+        self.has_history = bool(self._history)
+        return result
+
+    def _on_page_selected(self, _instance, handle):
+        """React to a :class:`PageRouter` ``on_page_selected`` event.
+
+        Pushes the previous page onto the history stack when navigating to a
+        different page.  Does nothing during a :meth:`go_back` traversal.
+        """
+        if self._going_back:
+            self._current_handle = handle
+            return
+
+        if self._current_handle is not None and self._current_handle != handle:
+            self._history.append(self._current_handle)
+            if len(self._history) > self.STACK_MAX_DEPTH:
+                self._history.pop(0)
+
+        self._current_handle = handle
+        self.has_history = bool(self._history)
 
 
 Builder.load_string("""
@@ -360,17 +368,21 @@ Builder.load_string("""
     BoxLayout:
         orientation: 'horizontal'
         spacing: 5
- 
-        StackLayout:
-            id: ContextButtons
-            size: [root.tab_width-1, root.height]
+
+        BoxLayout:
+            orientation: 'vertical'
             size_hint_x: None
-            orientation: 'lr-bt'
+            width: root.tab_width - 1
+            spacing: 5
 
             NavBackWidget:
                 id: nav_back
-                size_hint: None, None
-                size: root.tab_width - 1, root.tab_height
+                size_hint: 1, None
+                height: root.status_height
+
+            StackLayout:
+                id: ContextButtons
+                orientation: 'lr-bt'
             
         BoxLayout: 
             orientation: 'vertical'
@@ -492,9 +504,10 @@ class GlobalContentArea(AnchorLayout):
             context_buttons_panel=self.ids.ContextButtons,
             on_page_changed=lambda page: setattr(self, '_current_page', page),
             on_wake_screensaver=self._wake_screensaver,
-            on_nav_stack_changed=lambda has_history: setattr(self.ids.nav_back, 'has_history', has_history),
         )
-        self.ids.nav_back.nav_callback = self._router.go_back
+        nav_back = self.ids.nav_back
+        self._router.bind(on_page_selected=nav_back._on_page_selected)
+        nav_back._switch_callback = self._router.switch_to_label
 
         self.bind(conf=self._on_conf)
         self.bind(mqttc=self._on_mqttc)
