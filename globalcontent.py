@@ -10,7 +10,7 @@ from kivy.properties import ObjectProperty, StringProperty, OptionProperty, Nume
 from kivy.uix.button import Button
 
 from kivy.animation import Animation
-from kivy.graphics import Color, Rectangle, Line, InstructionGroup
+from kivy.graphics import Color, Rectangle, RoundedRectangle, Line, InstructionGroup
 
 
 class PageRouter(EventDispatcher):
@@ -336,6 +336,14 @@ class NavBackWidget(Button):
     # background colour shows through and individual slots remain countable.
     _SLOT_SEPARATOR_WIDTH = 2
 
+    # Gap in pixels between the fill-meter strip and the bottom edge of the widget.
+    _BOTTOM_GAP = 3
+
+    # Horizontal extent of the arrow (and fill meter) as fractions of widget width.
+    # The arrowhead tip is at _ARROW_LEFT and the shaft end is at _ARROW_RIGHT.
+    _ARROW_LEFT = 0.20
+    _ARROW_RIGHT = 0.80
+
     has_history = BooleanProperty(False)
     """``True`` when the navigation stack has at least one entry to go back to.
 
@@ -423,11 +431,12 @@ class NavBackWidget(Button):
     def _redraw_fill_meter(self, *_args):
         """Redraw the fill-meter slot strip on the widget canvas.
 
-        All :attr:`STACK_MAX_DEPTH` slots are drawn at the bottom of the widget.
-        Occupied slots (history entries) are shown as lilac rectangles; empty
-        slots are shown as dark-grey rectangles.  A narrow background-coloured
-        gap separates each slot so the total slot count is always visible.  Slot
-        height is derived from the real display aspect ratio captured at startup.
+        All :attr:`STACK_MAX_DEPTH` slots are drawn at the bottom of the widget,
+        inset by :attr:`_BOTTOM_GAP` pixels from the lower edge and horizontally
+        aligned with the arrow (from :attr:`_ARROW_LEFT` to :attr:`_ARROW_RIGHT`
+        fractions of the widget width).  Occupied slots are shown as lilac rounded
+        rectangles; empty slots are shown as dark-grey rounded rectangles.  A narrow
+        gap separates each slot so the total slot count is always visible.
 
         The arrow (drawn in ``canvas.after``) is always rendered on top of the
         fill meter.
@@ -441,25 +450,34 @@ class NavBackWidget(Button):
 
         n = self.STACK_MAX_DEPTH
         gap = self._SLOT_SEPARATOR_WIDTH
-        slot_w = (self.width - gap * (n - 1)) / n
+
+        # Horizontal span mirrors the arrow extent (tip to shaft end).
+        meter_x = self.x + self.width * self._ARROW_LEFT
+        meter_w = self.width * (self._ARROW_RIGHT - self._ARROW_LEFT)
+        slot_w = (meter_w - gap * (n - 1)) / n
 
         # Slot height: real display aspect ratio (portrait h/w), capped so the
         # fill meter does not crowd the arrow area.
         thumb_h = min(slot_w * self._display_aspect, self.height * 0.4)
 
+        # Vertical position: sit just above the bottom edge by _BOTTOM_GAP pixels.
+        slot_y = self.y + self._BOTTOM_GAP
+
+        # Corner radius: 1.5 px — just enough to round without looking circular.
+        radius = 1.5
+
         occupied = len(self._history)
 
         group = InstructionGroup()
         for i in range(n):
-            x = self.x + i * (slot_w + gap)
-            y = self.y
+            x = meter_x + i * (slot_w + gap)
             if i < occupied:
-                # Occupied slot: lilac rectangle
+                # Occupied slot: lilac rounded rectangle
                 group.add(Color(68 / 256, 53 / 256, 126 / 256, 1))
             else:
-                # Empty slot: grey rectangle
+                # Empty slot: grey rounded rectangle
                 group.add(Color(77 / 256, 77 / 256, 76 / 256, 1))
-            group.add(Rectangle(pos=(x, y), size=(slot_w, thumb_h)))
+            group.add(RoundedRectangle(pos=(x, slot_y), size=(slot_w, thumb_h), radius=[radius]))
 
         self.canvas.add(group)
         self._fill_meter_group = group
