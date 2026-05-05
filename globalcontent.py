@@ -25,8 +25,8 @@ class PageRouter(EventDispatcher):
 
     def __init__(self, content_panel, tab_height, context_buttons_panel, on_page_changed=None,
                  on_wake_screensaver=None):
-        self.register_event_type('on_page_selected')
         super().__init__()
+        self.register_event_type('on_page_selected')
 
         self._content_panel = content_panel
         self._tab_height = tab_height
