@@ -11,22 +11,28 @@ from kivy.uix.button import Button
 from kivy.animation import Animation
 
 
+STACK_MAX_DEPTH = 5
+"""Maximum number of entries kept on the navigation history stack."""
+
+
 class PageRouter(object):
     """Routes page navigation by string handle.
 
     Pages are identified by their ``label`` string (the handle).  Left-border
     pages get a :class:`ContextButton`; tray-area widgets can also be wired
     to a page via :meth:`register_border_button`.  Navigation history is
-    recorded for a future "jump back" feature.
+    tracked in a bounded stack; use :meth:`go_back` to return to the
+    previously active page.
     """
 
     def __init__(self, content_panel, tab_height, context_buttons_panel, on_page_changed=None,
-                 on_wake_screensaver=None):
+                 on_wake_screensaver=None, on_nav_stack_changed=None):
         self._content_panel = content_panel
         self._tab_height = tab_height
         self._context_buttons_panel = context_buttons_panel
         self._on_page_changed = on_page_changed
         self._on_wake_screensaver = on_wake_screensaver
+        self._on_nav_stack_changed = on_nav_stack_changed
 
         self._pages_by_handle = {}
         self._current_page = None
@@ -39,6 +45,15 @@ class PageRouter(object):
     @property
     def current_handle(self):
         return self._current_page.label if self._current_page else None
+
+    @property
+    def has_history(self):
+        """``True`` when the navigation stack has at least one entry."""
+        return len(self._history) > 0
+
+    def _notify_nav_stack(self):
+        if self._on_nav_stack_changed:
+            self._on_nav_stack_changed(self.has_history)
 
     def add_page(self, page):
         """Register a page with a :class:`ContextButton` in the left border."""
@@ -74,13 +89,16 @@ class PageRouter(object):
         page = self._pages_by_handle.get(handle)
         return self.switch_to_page(page, trip_screensaver=trip_screensaver)
 
-    def switch_to_page(self, page, trip_screensaver: bool = True):
+    def switch_to_page(self, page, trip_screensaver: bool = True, _push_history: bool = True):
         """Switch to the page.
 
         :param page: The page to switch to.
         :param trip_screensaver: When ``True`` (default), wake the screensaver
             so the screen becomes visible.  Pass ``False`` to change the page
             silently without affecting the screensaver.
+        :param _push_history: Internal flag.  When ``True`` (default), the
+            current page is pushed onto the navigation stack before switching.
+            Pass ``False`` when navigating back to avoid re-adding the page.
         :returns: ``True`` if the page was found and switched to.
         """
 
@@ -96,7 +114,10 @@ class PageRouter(object):
         if self._current_page is not None:
             self._content_panel.remove_widget(self._current_page)
             self._current_page.active = False
-            self._history.append(self._current_page.label)
+            if _push_history:
+                self._history.append(self._current_page.label)
+                if len(self._history) > STACK_MAX_DEPTH:
+                    self._history.pop(0)
 
         self._current_page = page
         page.active = True
@@ -105,7 +126,28 @@ class PageRouter(object):
         if self._on_page_changed:
             self._on_page_changed(page)
 
+        if _push_history:
+            self._notify_nav_stack()
+
         return True
+
+    def go_back(self) -> bool:
+        """Navigate to the previously visited page.
+
+        Pops one entry from the navigation stack and switches to that page
+        without pushing the current page back onto the stack.
+
+        :returns: ``True`` if navigation succeeded, ``False`` if the stack is
+            empty.
+        """
+        if not self._history:
+            return False
+
+        handle = self._history.pop()
+        page = self._pages_by_handle.get(handle)
+        result = self.switch_to_page(page, _push_history=False)
+        self._notify_nav_stack()
+        return result
 
 
 class ContentPage(RelativeLayout):
@@ -243,6 +285,50 @@ class ContextButton(Button):
 
 
 Builder.load_string("""
+<NavBackWidget>:
+    background_normal: ''
+    background_down: ''
+    background_color: 0, 0, 0, 1
+    text: '◀'
+    font_size: 32
+    color: [249/256, 176/256, 0/256, 1] if root.has_history else [77/256, 77/256, 76/256, 1]
+""")
+
+
+class NavBackWidget(Button):
+    """Navigation back button that reflects and controls the page history stack.
+
+    Displays a left-arrow indicator.  The widget is active (yellow) when the
+    navigation stack contains history entries and inactive (grey) when the
+    stack is exhausted.  Pressing the widget calls :attr:`nav_callback` to
+    navigate to the previously active page.
+    """
+
+    has_history = BooleanProperty(False)
+    """``True`` when the navigation stack has at least one entry to go back to.
+
+    :attr:`has_history` is a :class:`~kivy.properties.BooleanProperty` and
+    defaults to ``False``.
+    """
+
+    nav_callback = ObjectProperty(None, allownone=True)
+    """Callable invoked when the widget is pressed and :attr:`has_history` is
+    ``True``.  Typically wired to :meth:`PageRouter.go_back`.
+
+    :attr:`nav_callback` is an :class:`~kivy.properties.ObjectProperty` and
+    defaults to ``None``.
+    """
+
+    def __init__(self, **kwargs):
+        super(Button, self).__init__(**kwargs)
+        self.bind(on_press=self._on_press_dispatch)
+
+    def _on_press_dispatch(self, _instance):
+        if self.has_history and self.nav_callback and callable(self.nav_callback):
+            self.nav_callback()
+
+
+Builder.load_string("""
 #:import ScreenSaver screensaver.ScreenSaver
 #:import BacklightControl backlight.BacklightControl
 
@@ -279,7 +365,12 @@ Builder.load_string("""
             id: ContextButtons
             size: [root.tab_width-1, root.height]
             size_hint_x: None
-            orientation: 'lr-bt'      
+            orientation: 'lr-bt'
+
+            NavBackWidget:
+                id: nav_back
+                size_hint: None, None
+                size: root.tab_width - 1, root.tab_height
             
         BoxLayout: 
             orientation: 'vertical'
@@ -401,7 +492,9 @@ class GlobalContentArea(AnchorLayout):
             context_buttons_panel=self.ids.ContextButtons,
             on_page_changed=lambda page: setattr(self, '_current_page', page),
             on_wake_screensaver=self._wake_screensaver,
+            on_nav_stack_changed=lambda has_history: setattr(self.ids.nav_back, 'has_history', has_history),
         )
+        self.ids.nav_back.nav_callback = self._router.go_back
 
         self.bind(conf=self._on_conf)
         self.bind(mqttc=self._on_mqttc)
