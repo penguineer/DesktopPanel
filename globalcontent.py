@@ -295,13 +295,20 @@ Builder.load_string("""
     canvas.after:
         Color:
             rgba: [249/256, 176/256, 0/256, 1] if root.has_history else [77/256, 77/256, 76/256, 1]
+        # Arrow shaft: horizontal line spanning the full widget width
+        Line:
+            width: 1.5
+            cap: 'square'
+            points: root.x + root.width * 0.15, root.y + root.height * 0.65, \
+                    root.x + root.width * 0.88, root.y + root.height * 0.65
+        # Left-pointing chevron at the tip of the shaft
         Line:
             width: 2.5
             cap: 'round'
             joint: 'round'
-            points: root.x + root.width * 0.65, root.y + root.height * 0.88, \
-                root.x + root.width * 0.30, root.y + root.height * 0.72, \
-                root.x + root.width * 0.65, root.y + root.height * 0.56
+            points: root.x + root.width * 0.42, root.y + root.height * 0.80, \
+                    root.x + root.width * 0.15, root.y + root.height * 0.65, \
+                    root.x + root.width * 0.42, root.y + root.height * 0.50
 """)
 
 
@@ -334,8 +341,9 @@ class NavBackWidget(Button):
     # standard 16:9 landscape display used by the target hardware.
     _FALLBACK_THUMB_ASPECT = 9 / 16
 
-    # Width in pixels of the separator line drawn between fill-meter slots.
-    _SLOT_SEPARATOR_WIDTH = 1
+    # Width in pixels of the gap drawn between fill-meter slots so that the
+    # background colour shows through and individual slots remain countable.
+    _SLOT_SEPARATOR_WIDTH = 2
 
     has_history = BooleanProperty(False)
     """``True`` when the navigation stack has at least one entry to go back to.
@@ -454,47 +462,43 @@ class NavBackWidget(Button):
         self._redraw_fill_meter()
 
     def _redraw_fill_meter(self, *_args):
-        """Redraw the fill-meter thumbnail strip on the widget canvas.
+        """Redraw the fill-meter slot strip on the widget canvas.
 
-        Each occupied slot is drawn as a scaled thumbnail rectangle at the
-        bottom of the widget.  Slots are separated by a 1-pixel grey line so
-        that individual entries are visually distinct against the black
-        background.  The arrow (drawn in ``canvas.after``) is always rendered
-        on top of the fill meter.
+        All :attr:`STACK_MAX_DEPTH` slots are drawn at the bottom of the widget.
+        Occupied slots (history entries) are shown as yellow rectangles; empty
+        slots are shown as dark-grey rectangles.  A narrow background-coloured
+        gap separates each slot so the total slot count is always visible.  Slot
+        height is derived from the target display's aspect ratio so the slots
+        look like scaled page thumbnails.
+
+        The arrow (drawn in ``canvas.after``) is always rendered on top of the
+        fill meter.
         """
         if self._fill_meter_group is not None:
             self.canvas.remove(self._fill_meter_group)
             self._fill_meter_group = None
 
-        textures = [t for t in self._screenshots if t is not None]
-        if not textures:
-            return
-
         n = self.STACK_MAX_DEPTH
-        slot_w = self.width / n
+        gap = self._SLOT_SEPARATOR_WIDTH
+        slot_w = (self.width - gap * (n - 1)) / n
 
-        # Thumbnail display height: derived from first texture's aspect ratio,
-        # but capped so the fill meter does not crowd the arrow area.
-        max_thumb_h = self.height * 0.4
-        first = textures[0]
-        if first.width > 0:
-            thumb_h = min(slot_w * first.height / first.width, max_thumb_h)
-        else:
-            thumb_h = min(slot_w * self._FALLBACK_THUMB_ASPECT, max_thumb_h)
+        # Slot height: page aspect ratio (landscape 16:9 → height/width = 9/16),
+        # capped so the fill meter does not crowd the arrow area.
+        thumb_h = min(slot_w * self._FALLBACK_THUMB_ASPECT, self.height * 0.4)
+
+        occupied = len(self._history)
 
         group = InstructionGroup()
-        for i, tex in enumerate(textures):
-            x = self.x + i * slot_w
+        for i in range(n):
+            x = self.x + i * (slot_w + gap)
             y = self.y
-            group.add(Color(1, 1, 1, 1))
-            group.add(Rectangle(texture=tex, pos=(x, y), size=(slot_w, thumb_h)))
-
-        # Grey separator lines between occupied slots (black background ≡ invisible)
-        for i in range(1, len(textures)):
-            x_sep = self.x + i * slot_w
-            group.add(Color(77 / 256, 77 / 256, 76 / 256, 1))
-            group.add(Line(points=[x_sep, self.y, x_sep, self.y + thumb_h],
-                           width=self._SLOT_SEPARATOR_WIDTH))
+            if i < occupied:
+                # Occupied slot: yellow rectangle
+                group.add(Color(249 / 256, 176 / 256, 0 / 256, 1))
+            else:
+                # Empty slot: grey rectangle
+                group.add(Color(77 / 256, 77 / 256, 76 / 256, 1))
+            group.add(Rectangle(pos=(x, y), size=(slot_w, thumb_h)))
 
         self.canvas.add(group)
         self._fill_meter_group = group
