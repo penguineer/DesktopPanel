@@ -198,3 +198,123 @@ class TestNavBackWidgetStack:
             router.switch_to_page(page)
         # Index 0 (the very first page) was dropped; index 1 is now the oldest
         assert nav._history[0] == 'p1'
+
+
+class TestGoBackIfCurrent:
+    """Tests for the go-back-if-current behaviour wired via _go_back_callback."""
+
+    def _make_wired(self):
+        """Create a mock nav-back widget fully wired to a mock router."""
+        router = _make_router()
+        nav = _MockNavBack()
+        router.bind(on_page_selected=nav._on_page_selected)
+        nav._switch_callback = router.switch_to_label
+        router._go_back_callback = nav.go_back
+        return router, nav
+
+    def test_selecting_current_page_goes_back(self):
+        """Re-selecting the active page navigates back when history is available."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        router.switch_to_page(page2)
+        assert router.current_page is page1
+
+    def test_selecting_current_page_no_history_stays(self):
+        """Re-selecting the active page with no history does not change the page."""
+        router, nav = self._make_wired()
+        page = _register(router, 'a')
+        router.switch_to_page(page)
+        router.switch_to_page(page)
+        assert router.current_page is page
+
+    def test_go_back_if_current_false_stays_on_page(self):
+        """Passing go_back_if_current=False keeps the page open even if already active."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        router.switch_to_page(page2, go_back_if_current=False)
+        assert router.current_page is page2
+
+    def test_go_back_if_current_false_still_dispatches_event(self):
+        """go_back_if_current=False still fires on_page_selected for same page."""
+        router, nav = self._make_wired()
+        page = _register(router, 'a')
+        router.switch_to_page(page)
+        calls = []
+        router.bind(on_page_selected=lambda _inst, h: calls.append(h))
+        router.switch_to_page(page, go_back_if_current=False)
+        assert calls == ['a']
+
+    def test_selecting_current_page_by_label_goes_back(self):
+        """switch_to_label also goes back when the target page is already active."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        router.switch_to_label('b')
+        assert router.current_page is page1
+
+    def test_go_back_if_current_does_not_push_to_stack(self):
+        """Going back via go_back_if_current must not push anything onto the stack."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        router.switch_to_page(page2)  # triggers go_back
+        assert router.current_page is page1
+        assert not nav.has_history
+
+
+class TestNoDuplicatesOnStack:
+    """Tests for the no-consecutive-duplicates invariant on the history stack."""
+
+    def _make_wired(self):
+        router = _make_router()
+        nav = _MockNavBack()
+        router.bind(on_page_selected=nav._on_page_selected)
+        nav._switch_callback = router.switch_to_label
+        return router, nav
+
+    def test_no_consecutive_duplicate_push(self):
+        """If the top of the stack already holds the page being pushed, it is
+        popped first and then the page is pushed again — so only one entry
+        for that handle remains at the top of the stack."""
+        _, nav = self._make_wired()
+        # Manually seed history with 'a' on top, then simulate a push of 'a' again.
+        nav._current_handle = 'a'
+        nav._history = ['a']
+        # Navigate to 'b': 'a' is popped from the stack and then re-pushed, so
+        # the stack still contains exactly one 'a'.
+        nav._on_page_selected(None, 'b')
+        assert nav._history == ['a']
+
+    def test_go_back_skips_current_page_entries(self):
+        """go_back pops past entries that match the current page."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        # Manually inject a duplicate of current page ('b') at the top of the stack.
+        nav._history.append('b')
+        # go_back should skip 'b' and land on 'a'.
+        nav.go_back()
+        assert router.current_page is page1
+
+    def test_go_back_returns_false_when_only_duplicates(self):
+        """go_back returns False if the stack contains only entries matching current."""
+        _, nav = self._make_wired()
+        nav._current_handle = 'a'
+        nav._history = ['a', 'a', 'a']
+        nav.has_history = True
+        result = nav.go_back()
+        assert result is False
+        assert not nav.has_history
+
