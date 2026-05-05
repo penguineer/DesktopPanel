@@ -36,6 +36,7 @@ class PageRouter(EventDispatcher):
 
         self._pages_by_handle = {}
         self._current_page = None
+        self._go_back_callback = None
 
     def on_page_selected(self, handle):
         """Default handler for the ``on_page_selected`` event (no-op)."""
@@ -70,25 +71,36 @@ class PageRouter(EventDispatcher):
             if self._current_page is None:
                 self.switch_to_label(handle)
 
-    def switch_to_label(self, handle: str, trip_screensaver: bool = True) -> bool:
+    def switch_to_label(self, handle: str, trip_screensaver: bool = True,
+                        go_back_if_current: bool = True) -> bool:
         """Switch to the page identified by *handle*.
 
         :param handle: The page label to switch to.
         :param trip_screensaver: When ``True`` (default), wake the screensaver
             so the screen becomes visible.  Pass ``False`` to change the page
             silently without affecting the screensaver.
+        :param go_back_if_current: When ``True`` (default), selecting a page
+            that is already active triggers a navigation back on the history
+            stack instead of staying on the same page.  Pass ``False`` to force
+            the page open without going back (e.g. for programmatic navigation).
         :returns: ``True`` if the page was found and switched to.
         """
         page = self._pages_by_handle.get(handle)
-        return self.switch_to_page(page, trip_screensaver=trip_screensaver)
+        return self.switch_to_page(page, trip_screensaver=trip_screensaver,
+                                   go_back_if_current=go_back_if_current)
 
-    def switch_to_page(self, page, trip_screensaver: bool = True):
+    def switch_to_page(self, page, trip_screensaver: bool = True,
+                       go_back_if_current: bool = True):
         """Switch to the page.
 
         :param page: The page to switch to.
         :param trip_screensaver: When ``True`` (default), wake the screensaver
             so the screen becomes visible.  Pass ``False`` to change the page
             silently without affecting the screensaver.
+        :param go_back_if_current: When ``True`` (default), selecting a page
+            that is already active triggers a navigation back on the history
+            stack instead of staying on the same page.  Pass ``False`` to force
+            the page open without going back (e.g. for programmatic navigation).
         :returns: ``True`` if the page was found and switched to.
         """
 
@@ -98,17 +110,22 @@ class PageRouter(EventDispatcher):
         if trip_screensaver and self._on_wake_screensaver:
             self._on_wake_screensaver()
 
-        if self._current_page is not page:
-            if self._current_page is not None:
-                self._content_panel.remove_widget(self._current_page)
-                self._current_page.active = False
+        if self._current_page is page:
+            if go_back_if_current and self._go_back_callback and self._go_back_callback():
+                return True
+            self.dispatch('on_page_selected', page.label)
+            return True
 
-            self._current_page = page
-            page.active = True
-            self._content_panel.add_widget(page)
+        if self._current_page is not None:
+            self._content_panel.remove_widget(self._current_page)
+            self._current_page.active = False
 
-            if self._on_page_changed:
-                self._on_page_changed(page)
+        self._current_page = page
+        page.active = True
+        self._content_panel.add_widget(page)
+
+        if self._on_page_changed:
+            self._on_page_changed(page)
 
         self.dispatch('on_page_selected', page.label)
 
@@ -301,16 +318,26 @@ class NavBackWidget(Button):
     def go_back(self) -> bool:
         """Navigate to the previously visited page.
 
-        Pops one entry from the navigation stack and switches to that page
-        without pushing the current page back onto the stack.
+        Pops entries from the navigation stack until a page different from the
+        current one is found, then switches to it without pushing the current
+        page back onto the stack.  Any intermediate stack entries that match
+        the current page are discarded.
 
         :returns: ``True`` if navigation succeeded, ``False`` if the stack is
-            empty.
+            empty or contains only entries matching the current page.
         """
         if not self._history:
             return False
 
+        current = self._current_handle
         handle = self._history.pop()
+        while handle == current and self._history:
+            handle = self._history.pop()
+
+        if handle == current:
+            self.has_history = bool(self._history)
+            return False
+
         self._going_back = True
         result = bool(self._switch_callback and self._switch_callback(handle))
         self._going_back = False
@@ -322,15 +349,18 @@ class NavBackWidget(Button):
 
         Pushes the previous page onto the history stack when navigating to a
         different page.  Does nothing during a :meth:`go_back` traversal.
+        Consecutive duplicate entries (same handle at the top of the stack) are
+        never pushed.
         """
         if self._going_back:
             self._current_handle = handle
             return
 
         if self._current_handle is not None and self._current_handle != handle:
-            self._history.append(self._current_handle)
-            if len(self._history) > self.STACK_MAX_DEPTH:
-                self._history.pop(0)
+            if not self._history or self._history[-1] != self._current_handle:
+                self._history.append(self._current_handle)
+                if len(self._history) > self.STACK_MAX_DEPTH:
+                    self._history.pop(0)
 
         self._current_handle = handle
         self.has_history = bool(self._history)
@@ -508,6 +538,7 @@ class GlobalContentArea(AnchorLayout):
         nav_back = self.ids.nav_back
         self._router.bind(on_page_selected=nav_back._on_page_selected)
         nav_back._switch_callback = self._router.switch_to_label
+        self._router._go_back_callback = nav_back.go_back
 
         self.bind(conf=self._on_conf)
         self.bind(mqttc=self._on_mqttc)
