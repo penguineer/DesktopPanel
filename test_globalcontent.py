@@ -9,6 +9,8 @@ class _MockPage:
     def __init__(self, label):
         self.label = label
         self.active = False
+        self.width = 0
+        self.height = 0
 
 
 class _MockPanel:
@@ -32,11 +34,20 @@ class _MockNavBack:
 
     def __init__(self):
         self._history = []
+        self._screenshots = []
+        self._pending_screenshot = None
         self._going_back = False
         self._current_handle = None
         self._switch_callback = None
         self.has_history = False
+        self.fill_meter_height = 0
+        self.width = 64
+        self.height = 50
 
+    def _redraw_fill_meter(self, *_args):
+        pass  # no-op in tests; canvas not available
+
+    _on_before_page_switch = NavBackWidget._on_before_page_switch
     _on_page_selected = NavBackWidget._on_page_selected
     go_back = NavBackWidget.go_back
 
@@ -102,6 +113,7 @@ class TestNavBackWidgetStack:
         router = _make_router()
         nav = _MockNavBack()
         router.bind(on_page_selected=nav._on_page_selected)
+        router.bind(on_before_page_switch=nav._on_before_page_switch)
         nav._switch_callback = router.switch_to_label
         return router, nav
 
@@ -208,6 +220,7 @@ class TestGoBackIfCurrent:
         router = _make_router()
         nav = _MockNavBack()
         router.bind(on_page_selected=nav._on_page_selected)
+        router.bind(on_before_page_switch=nav._on_before_page_switch)
         nav._switch_callback = router.switch_to_label
         router._go_back_callback = nav.go_back
         return router, nav
@@ -279,6 +292,7 @@ class TestNoDuplicatesOnStack:
         router = _make_router()
         nav = _MockNavBack()
         router.bind(on_page_selected=nav._on_page_selected)
+        router.bind(on_before_page_switch=nav._on_before_page_switch)
         nav._switch_callback = router.switch_to_label
         return router, nav
 
@@ -327,6 +341,7 @@ class TestPageRouterGoBack:
         router = _make_router()
         nav = _MockNavBack()
         router.bind(on_page_selected=nav._on_page_selected)
+        router.bind(on_before_page_switch=nav._on_before_page_switch)
         nav._switch_callback = router.switch_to_label
         router._go_back_callback = nav.go_back
         return router, nav
@@ -366,3 +381,92 @@ class TestPageRouterGoBack:
         router.switch_to_page(page2)
         assert router.go_back() is False
 
+
+class TestScreenshotSync:
+    """Tests that _screenshots stays in sync with _history during navigation."""
+
+    def _make_wired(self):
+        router = _make_router()
+        nav = _MockNavBack()
+        router.bind(on_page_selected=nav._on_page_selected)
+        router.bind(on_before_page_switch=nav._on_before_page_switch)
+        nav._switch_callback = router.switch_to_label
+        router._go_back_callback = nav.go_back
+        return router, nav
+
+    def test_screenshots_grow_with_history(self):
+        """_screenshots length matches _history length after forward navigation."""
+        from unittest.mock import patch
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        with patch('globalcontent.capture_widget_texture', return_value='thumb_a'):
+            router.switch_to_page(page2)
+        assert len(nav._screenshots) == len(nav._history) == 1
+
+    def test_screenshot_pushed_with_handle(self):
+        """The captured thumbnail is stored alongside the matching history entry."""
+        from unittest.mock import patch
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        with patch('globalcontent.capture_widget_texture', return_value='thumb_a'):
+            router.switch_to_page(page2)
+        # _history[-1] == 'a'; _screenshots[-1] should be 'thumb_a'
+        assert nav._history[-1] == 'a'
+        assert nav._screenshots[-1] == 'thumb_a'
+
+    def test_screenshot_popped_on_go_back(self):
+        """Going back pops the screenshot alongside the history entry."""
+        from unittest.mock import patch
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        with patch('globalcontent.capture_widget_texture', return_value='thumb_a'):
+            router.switch_to_page(page2)
+        nav.go_back()
+        assert len(nav._screenshots) == 0
+        assert len(nav._history) == 0
+
+    def test_screenshots_limited_by_stack_depth(self):
+        """_screenshots is trimmed to STACK_MAX_DEPTH when the stack overflows."""
+        from unittest.mock import patch
+        router, nav = self._make_wired()
+        pages = [_register(router, f'p{i}') for i in range(_MockNavBack.STACK_MAX_DEPTH + 2)]
+        with patch('globalcontent.capture_widget_texture', side_effect=[f'thumb_{i}' for i in range(20)]):
+            for page in pages:
+                router.switch_to_page(page)
+        assert len(nav._screenshots) == _MockNavBack.STACK_MAX_DEPTH
+
+    def test_no_screenshot_captured_during_go_back(self):
+        """_on_before_page_switch must not capture a screenshot while going back."""
+        from unittest.mock import patch, MagicMock
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        with patch('globalcontent.capture_widget_texture', return_value='thumb_a'):
+            router.switch_to_page(page2)
+        # Manually simulate go_back firing _on_before_page_switch
+        nav._going_back = True
+        nav._on_before_page_switch(None, page2, page1)
+        assert nav._pending_screenshot is None
+
+    def test_on_before_page_switch_fired_before_remove(self):
+        """PageRouter fires on_before_page_switch before removing the old page."""
+        router = _make_router()
+        captured = []
+
+        def capture_handler(_instance, old_page, _new_page):
+            captured.append(old_page)
+
+        router.bind(on_before_page_switch=capture_handler)
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        # The old page should have been passed to the handler
+        assert captured == [page1]
