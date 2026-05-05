@@ -466,7 +466,7 @@ class NavBackWidget(Button):
         if first.width > 0:
             thumb_h = slot_w * first.height / first.width
         else:
-            thumb_h = slot_w * 0.58  # fallback ~16:9 landscape
+            thumb_h = slot_w * (9 / 16)  # fallback inverse aspect ratio for 16:9 landscape
 
         self.fill_meter_height = thumb_h
 

@@ -16,7 +16,7 @@ def capture_widget_texture(widget, max_width, max_height):
     :returns: A :class:`~kivy.graphics.texture.Texture`, or ``None`` if
         capture failed or the widget has zero dimensions.
     """
-    if not widget or widget.width <= 0 or widget.height <= 0:
+    if widget is None or widget.width <= 0 or widget.height <= 0:
         return None
 
     try:
