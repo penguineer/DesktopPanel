@@ -142,6 +142,7 @@ class TabbedPanelApp(App):
     def _register_presence_page(self, ca, presence_page):
         """Wire the PresencePage to the PresenceTrayWidget and register it with the router."""
         self.presence_tray.register_presence_page(presence_page)
+        presence_page.go_back_callback = ca.router.go_back
         ca.register_border_button(self.presence_tray, presence_page)
 
     def on_stop(self):

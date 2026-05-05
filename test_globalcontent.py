@@ -318,3 +318,51 @@ class TestNoDuplicatesOnStack:
         assert result is False
         assert not nav.has_history
 
+
+class TestPageRouterGoBack:
+    """Tests for PageRouter.go_back() delegation to NavBackWidget."""
+
+    def _make_wired(self):
+        """Create a mock nav-back widget fully wired to a mock router."""
+        router = _make_router()
+        nav = _MockNavBack()
+        router.bind(on_page_selected=nav._on_page_selected)
+        nav._switch_callback = router.switch_to_label
+        router._go_back_callback = nav.go_back
+        return router, nav
+
+    def test_go_back_returns_true_when_history_exists(self):
+        """PageRouter.go_back() returns True when navigation succeeds."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        assert router.go_back() is True
+
+    def test_go_back_navigates_to_previous_page(self):
+        """PageRouter.go_back() switches to the previously visited page."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        router.go_back()
+        assert router.current_page is page1
+
+    def test_go_back_returns_false_when_no_history(self):
+        """PageRouter.go_back() returns False when the navigation stack is empty."""
+        router, nav = self._make_wired()
+        page = _register(router, 'a')
+        router.switch_to_page(page)
+        assert router.go_back() is False
+
+    def test_go_back_returns_false_when_no_callback(self):
+        """PageRouter.go_back() returns False when no go-back callback is wired."""
+        router = _make_router()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        assert router.go_back() is False
+
