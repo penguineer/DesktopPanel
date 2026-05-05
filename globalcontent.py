@@ -320,7 +320,7 @@ class NavBackWidget(Button):
     """
 
     def __init__(self, **kwargs):
-        super(Button, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.bind(on_press=self._on_press_dispatch)
 
     def _on_press_dispatch(self, _instance):
