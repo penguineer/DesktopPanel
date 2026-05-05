@@ -894,7 +894,7 @@ Builder.load_string("""
             size_hint: [None, None]
             active_status: root.active_presence.status if root.active_presence else "unknown"
             requested_status: root.requested_status
-            request_callback: root.request_callback
+            request_callback: root._post_presence_request
 """)
 
 
@@ -908,3 +908,11 @@ class PresencePage(globalcontent.ContentPage):
     tracked_entries = ListProperty()
 
     request_callback = ObjectProperty(_noop_request_callback)
+
+    go_back_callback = ObjectProperty(None, allownone=True)
+
+    def _post_presence_request(self, status):
+        """Post a presence status request and navigate back."""
+        self.request_callback(status)
+        if self.go_back_callback and callable(self.go_back_callback):
+            self.go_back_callback()

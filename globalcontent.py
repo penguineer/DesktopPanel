@@ -131,6 +131,18 @@ class PageRouter(EventDispatcher):
 
         return True
 
+    def go_back(self) -> bool:
+        """Navigate back to the previously visited page.
+
+        Delegates to the go-back callback owned by the :class:`NavBackWidget`.
+
+        :returns: ``True`` if navigation succeeded, ``False`` if there is no
+            history or no go-back callback is registered.
+        """
+        if self._go_back_callback:
+            return bool(self._go_back_callback())
+        return False
+
 
 class ContentPage(RelativeLayout):
     conf_lambda = ObjectProperty(None)
