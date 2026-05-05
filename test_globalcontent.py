@@ -31,6 +31,9 @@ class _MockNavBack:
     """
 
     STACK_MAX_DEPTH = NavBackWidget.STACK_MAX_DEPTH
+    _THUMB_CAPTURE_WIDTH = NavBackWidget._THUMB_CAPTURE_WIDTH
+    _FALLBACK_THUMB_ASPECT = NavBackWidget._FALLBACK_THUMB_ASPECT
+    _SLOT_SEPARATOR_WIDTH = NavBackWidget._SLOT_SEPARATOR_WIDTH
 
     def __init__(self):
         self._history = []
@@ -40,7 +43,6 @@ class _MockNavBack:
         self._current_handle = None
         self._switch_callback = None
         self.has_history = False
-        self.fill_meter_height = 0
         self.width = 64
         self.height = 50
 

@@ -10,9 +10,9 @@ from kivy.properties import ObjectProperty, StringProperty, OptionProperty, Nume
 from kivy.uix.button import Button
 
 from kivy.animation import Animation
-from kivy.graphics import Color, Rectangle, InstructionGroup
+from kivy.graphics import Color, Rectangle, Line, InstructionGroup
 
-from page_screenshot import capture_widget_texture
+from screenshot import capture_widget_texture
 
 
 class PageRouter(EventDispatcher):
@@ -297,12 +297,9 @@ Builder.load_string("""
             rgba: [249/256, 176/256, 0/256, 1] if root.has_history else [77/256, 77/256, 76/256, 1]
         Triangle:
             points:
-                root.x + root.width * 0.65, \
-                root.y + root.fill_meter_height + (root.height - root.fill_meter_height) * 0.15, \
-                root.x + root.width * 0.25, \
-                root.y + root.fill_meter_height + (root.height - root.fill_meter_height) * 0.5, \
-                root.x + root.width * 0.65, \
-                root.y + root.fill_meter_height + (root.height - root.fill_meter_height) * 0.85
+                root.x + root.width * 0.65, root.y + root.height * 0.25, \
+                root.x + root.width * 0.25, root.y + root.height * 0.50, \
+                root.x + root.width * 0.65, root.y + root.height * 0.75
 """)
 
 
@@ -326,19 +323,23 @@ class NavBackWidget(Button):
     STACK_MAX_DEPTH = 3
     """Maximum number of entries kept on the navigation history stack."""
 
+    # Width in pixels at which page thumbnails are captured.  A larger value
+    # gives better quality when displayed in the small fill-meter slots.
+    _THUMB_CAPTURE_WIDTH = 200
+
+    # Fallback inverse aspect ratio (height/width) used when the page or
+    # texture has no valid dimensions.  9/16 is the portrait reciprocal of the
+    # standard 16:9 landscape display used by the target hardware.
+    _FALLBACK_THUMB_ASPECT = 9 / 16
+
+    # Width in pixels of the separator line drawn between fill-meter slots.
+    _SLOT_SEPARATOR_WIDTH = 1
+
     has_history = BooleanProperty(False)
     """``True`` when the navigation stack has at least one entry to go back to.
 
     :attr:`has_history` is a :class:`~kivy.properties.BooleanProperty` and
     defaults to ``False``.
-    """
-
-    fill_meter_height = NumericProperty(0)
-    """Height in pixels reserved at the bottom of the widget for the fill-meter
-    thumbnail strip.  Updated automatically whenever the screenshot list changes.
-
-    :attr:`fill_meter_height` is a :class:`~kivy.properties.NumericProperty`
-    and defaults to ``0``.
     """
 
     def __init__(self, **kwargs):
@@ -400,6 +401,11 @@ class NavBackWidget(Button):
         capture works correctly.  The texture is stashed in
         :attr:`_pending_screenshot` and consumed by the next
         :meth:`_on_page_selected` call.
+
+        Thumbnails are captured at :attr:`_THUMB_CAPTURE_WIDTH` pixels wide
+        (preserving aspect ratio) so that OpenGL texture filtering produces
+        high-quality results when the texture is displayed at the smaller
+        fill-meter slot size.
         """
         if self._going_back:
             self._pending_screenshot = None
@@ -408,14 +414,15 @@ class NavBackWidget(Button):
             self._pending_screenshot = None
             return
 
-        thumb_w = max(1, int(self.width / self.STACK_MAX_DEPTH))
-        # Preserve aspect ratio: compute height from page dimensions
+        # Capture at a higher resolution than the display slot so that OpenGL
+        # bi-linear filtering produces a good-looking scaled-down thumbnail.
+        capture_w = self._THUMB_CAPTURE_WIDTH
         if old_page.width > 0 and old_page.height > 0:
-            thumb_h = max(1, int(thumb_w * old_page.height / old_page.width))
+            capture_h = max(1, int(capture_w * old_page.height / old_page.width))
         else:
-            thumb_h = thumb_w
+            capture_h = int(capture_w * self._FALLBACK_THUMB_ASPECT)
 
-        self._pending_screenshot = capture_widget_texture(old_page, thumb_w, thumb_h)
+        self._pending_screenshot = capture_widget_texture(old_page, capture_w, capture_h)
 
     def _on_page_selected(self, _instance, handle):
         """React to a :class:`PageRouter` ``on_page_selected`` event.
@@ -448,27 +455,30 @@ class NavBackWidget(Button):
         self._redraw_fill_meter()
 
     def _redraw_fill_meter(self, *_args):
-        """Redraw the fill-meter thumbnail strip on the widget canvas."""
+        """Redraw the fill-meter thumbnail strip on the widget canvas.
+
+        Each occupied slot is drawn as a scaled thumbnail rectangle at the
+        bottom of the widget.  Slots are separated by a 1-pixel dark line so
+        that individual entries are visually distinct.  The arrow (drawn in
+        ``canvas.after``) is always rendered on top of the fill meter.
+        """
         if self._fill_meter_group is not None:
             self.canvas.remove(self._fill_meter_group)
             self._fill_meter_group = None
 
         textures = [t for t in self._screenshots if t is not None]
         if not textures:
-            self.fill_meter_height = 0
             return
 
         n = self.STACK_MAX_DEPTH
         slot_w = self.width / n
 
-        # Determine thumbnail height from first texture aspect ratio
+        # Thumbnail display height derived from the first texture's aspect ratio
         first = textures[0]
         if first.width > 0:
             thumb_h = slot_w * first.height / first.width
         else:
-            thumb_h = slot_w * (9 / 16)  # fallback inverse aspect ratio for 16:9 landscape
-
-        self.fill_meter_height = thumb_h
+            thumb_h = slot_w * self._FALLBACK_THUMB_ASPECT  # fallback for 16:9 landscape
 
         group = InstructionGroup()
         for i, tex in enumerate(textures):
@@ -476,6 +486,12 @@ class NavBackWidget(Button):
             y = self.y
             group.add(Color(1, 1, 1, 1))
             group.add(Rectangle(texture=tex, pos=(x, y), size=(slot_w, thumb_h)))
+
+        # Draw 1-pixel separator lines between occupied slots
+        for i in range(1, len(textures)):
+            x_sep = self.x + i * slot_w
+            group.add(Color(0, 0, 0, 1))
+            group.add(Line(points=[x_sep, self.y, x_sep, self.y + thumb_h], width=self._SLOT_SEPARATOR_WIDTH))
 
         self.canvas.add(group)
         self._fill_meter_group = group

@@ -5,7 +5,6 @@
 
 # Author: Stefan Haun <tux@netz39.de>
 import asyncio
-from datetime import datetime
 import signal
 import sys
 import json
@@ -20,6 +19,7 @@ from spacestatus import SpaceStatusWidget
 from page_system import SystemPage
 from reloadable_json import JsonObserver
 from datetime_display import DateTimeDisplay
+from screenshot import screenshot_window
 
 from kivy import Logger
 from kivy.config import Config
@@ -170,9 +170,7 @@ def command_log(cmd, args):
 
 
 def command_screenshot(_cmd, _args):
-    name = "Screenshot {}.png".format(datetime.now())
-    Logger.info("Taking a screenshot to %s", name)
-    Window.screenshot(name=name)
+    screenshot_window()
 
 
 async def main():

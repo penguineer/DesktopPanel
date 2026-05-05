@@ -1,10 +1,26 @@
-""" Module for capturing widget content as scaled-down textures """
+""" Module for application screenshots: window captures and widget thumbnails """
+
+from datetime import datetime
 
 from kivy import Logger
+from kivy.core.window import Window
+
+
+def screenshot_window(name=None):
+    """Take a screenshot of the entire application window and save to a file.
+
+    :param name: Optional file name.  When ``None`` a timestamped default is
+        used (``Screenshot <datetime>.png``).
+    :returns: The file path written by Kivy, or ``None`` on failure.
+    """
+    if name is None:
+        name = "Screenshot {}.png".format(datetime.now())
+    Logger.info("Screenshot: Taking a screenshot to %s", name)
+    return Window.screenshot(name=name)
 
 
 def capture_widget_texture(widget, max_width, max_height):
-    """Capture a widget's rendered content as a small thumbnail texture.
+    """Capture a widget's rendered content as a thumbnail texture.
 
     The widget must be attached to the widget tree and have non-zero size.
     The returned texture preserves the widget's aspect ratio and fits within
@@ -29,5 +45,5 @@ def capture_widget_texture(widget, max_width, max_height):
         core_image = widget.export_as_image(scale=scale)
         return core_image.texture
     except Exception as e:
-        Logger.warning("PageScreenshot: Failed to capture widget: %s", e)
+        Logger.warning("Screenshot: Failed to capture widget: %s", e)
         return None
