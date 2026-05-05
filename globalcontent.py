@@ -336,10 +336,11 @@ class NavBackWidget(Button):
     # background colour shows through and individual slots remain countable.
     _SLOT_SEPARATOR_WIDTH = 2
 
-    # Gap in pixels between the fill-meter strip and the bottom edge of the widget.
-    _BOTTOM_GAP = 3
+    # Gap in pixels between the fill-meter strip and the left, right, and bottom
+    # borders of the widget.
+    _BORDER_GAP = 8
 
-    # Horizontal extent of the arrow (and fill meter) as fractions of widget width.
+    # Horizontal extent of the arrow as fractions of widget width.
     # The arrowhead tip is at _ARROW_LEFT and the shaft end is at _ARROW_RIGHT.
     _ARROW_LEFT = 0.20
     _ARROW_RIGHT = 0.80
@@ -432,11 +433,10 @@ class NavBackWidget(Button):
         """Redraw the fill-meter slot strip on the widget canvas.
 
         All :attr:`STACK_MAX_DEPTH` slots are drawn at the bottom of the widget,
-        inset by :attr:`_BOTTOM_GAP` pixels from the lower edge and horizontally
-        aligned with the arrow (from :attr:`_ARROW_LEFT` to :attr:`_ARROW_RIGHT`
-        fractions of the widget width).  Occupied slots are shown as lilac rounded
-        rectangles; empty slots are shown as dark-grey rounded rectangles.  A narrow
-        gap separates each slot so the total slot count is always visible.
+        inset by :attr:`_BORDER_GAP` pixels from the left, right, and bottom edges.
+        Occupied slots are shown as lilac rounded rectangles; empty slots are shown
+        as dark-grey rounded rectangles.  A narrow gap separates each slot so the
+        total slot count is always visible.
 
         The arrow (drawn in ``canvas.after``) is always rendered on top of the
         fill meter.
@@ -451,17 +451,17 @@ class NavBackWidget(Button):
         n = self.STACK_MAX_DEPTH
         gap = self._SLOT_SEPARATOR_WIDTH
 
-        # Horizontal span mirrors the arrow extent (tip to shaft end).
-        meter_x = self.x + self.width * self._ARROW_LEFT
-        meter_w = self.width * (self._ARROW_RIGHT - self._ARROW_LEFT)
+        # Horizontal span: full widget width minus 8 px on each side.
+        meter_x = self.x + self._BORDER_GAP
+        meter_w = self.width - 2 * self._BORDER_GAP
         slot_w = (meter_w - gap * (n - 1)) / n
 
         # Slot height: real display aspect ratio (portrait h/w), capped so the
         # fill meter does not crowd the arrow area.
         thumb_h = min(slot_w * self._display_aspect, self.height * 0.4)
 
-        # Vertical position: sit just above the bottom edge by _BOTTOM_GAP pixels.
-        slot_y = self.y + self._BOTTOM_GAP
+        # Vertical position: sit 8 px above the bottom edge.
+        slot_y = self.y + self._BORDER_GAP
 
         # Corner radius: 1.5 px — just enough to round without looking circular.
         radius = 1.5
