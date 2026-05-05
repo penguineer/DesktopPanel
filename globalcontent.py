@@ -10,6 +10,9 @@ from kivy.properties import ObjectProperty, StringProperty, OptionProperty, Nume
 from kivy.uix.button import Button
 
 from kivy.animation import Animation
+from kivy.graphics import Color, Rectangle, Line, InstructionGroup
+
+from screenshot import capture_widget_texture, SalientScaleStrategy
 
 
 class PageRouter(EventDispatcher):
@@ -27,6 +30,7 @@ class PageRouter(EventDispatcher):
                  on_wake_screensaver=None):
         super().__init__()
         self.register_event_type('on_page_selected')
+        self.register_event_type('on_before_page_switch')
 
         self._content_panel = content_panel
         self._tab_height = tab_height
@@ -40,6 +44,9 @@ class PageRouter(EventDispatcher):
 
     def on_page_selected(self, handle):
         """Default handler for the ``on_page_selected`` event (no-op)."""
+
+    def on_before_page_switch(self, old_page, new_page):
+        """Default handler for the ``on_before_page_switch`` event (no-op)."""
 
     @property
     def current_page(self):
@@ -117,6 +124,7 @@ class PageRouter(EventDispatcher):
             return True
 
         if self._current_page is not None:
+            self.dispatch('on_before_page_switch', self._current_page, page)
             self._content_panel.remove_widget(self._current_page)
             self._current_page.active = False
 
@@ -283,30 +291,51 @@ Builder.load_string("""
     background_normal: ''
     background_down: ''
     background_color: 0, 0, 0, 1
-    text: '◀'
-    font_size: 32
-    color: [249/256, 176/256, 0/256, 1] if root.has_history else [77/256, 77/256, 76/256, 1]
+    text: ''
+    canvas.after:
+        Color:
+            rgba: [249/256, 176/256, 0/256, 1] if root.has_history else [77/256, 77/256, 76/256, 1]
+        Line:
+            width: 2.5
+            cap: 'round'
+            joint: 'round'
+            points: root.x + root.width * 0.65, root.y + root.height * 0.88, \
+                root.x + root.width * 0.30, root.y + root.height * 0.72, \
+                root.x + root.width * 0.65, root.y + root.height * 0.56
 """)
 
 
 class NavBackWidget(Button):
     """Navigation back button that owns and controls the page history stack.
 
-    Displays a left-arrow indicator.  The widget is active (yellow) when the
-    navigation stack contains history entries and inactive (grey) when the
-    stack is exhausted.
+    Displays a visual back-navigation arrow.  The widget is active (yellow)
+    when the navigation stack contains history entries and inactive (grey)
+    when the stack is exhausted.  A fill-meter strip at the bottom shows
+    scaled thumbnails of pages that have been pushed onto the stack, from
+    left to right.
 
-    Wire this widget to a :class:`PageRouter` by binding its
-    :meth:`_on_page_selected` callback to the router's ``on_page_selected``
-    event and setting :attr:`_switch_callback` to the router's
-    ``switch_to_label`` method::
+    Wire this widget to a :class:`PageRouter` by binding its callbacks to
+    the router's events and setting :attr:`_switch_callback`::
 
         router.bind(on_page_selected=nav_back._on_page_selected)
+        router.bind(on_before_page_switch=nav_back._on_before_page_switch)
         nav_back._switch_callback = router.switch_to_label
     """
 
-    STACK_MAX_DEPTH = 5
+    STACK_MAX_DEPTH = 3
     """Maximum number of entries kept on the navigation history stack."""
+
+    # Width in pixels at which page thumbnails are captured.  A larger value
+    # gives better quality when displayed in the small fill-meter slots.
+    _THUMB_CAPTURE_WIDTH = 200
+
+    # Fallback inverse aspect ratio (height/width) used when the page or
+    # texture has no valid dimensions.  9/16 is the portrait reciprocal of the
+    # standard 16:9 landscape display used by the target hardware.
+    _FALLBACK_THUMB_ASPECT = 9 / 16
+
+    # Width in pixels of the separator line drawn between fill-meter slots.
+    _SLOT_SEPARATOR_WIDTH = 1
 
     has_history = BooleanProperty(False)
     """``True`` when the navigation stack has at least one entry to go back to.
@@ -317,10 +346,14 @@ class NavBackWidget(Button):
 
     def __init__(self, **kwargs):
         self._history = []
+        self._screenshots = []      # parallel list of textures, one per _history entry
+        self._pending_screenshot = None
         self._going_back = False
         self._current_handle = None
         self._switch_callback = None
+        self._fill_meter_group = None
         super().__init__(**kwargs)
+        self.bind(size=self._redraw_fill_meter, pos=self._redraw_fill_meter)
 
     def on_press(self):
         """Kivy event handler: navigate back when the stack is non-empty."""
@@ -343,18 +376,52 @@ class NavBackWidget(Button):
 
         current = self._current_handle
         handle = self._history.pop()
+        if self._screenshots:
+            self._screenshots.pop()
         while handle == current and self._history:
             handle = self._history.pop()
+            if self._screenshots:
+                self._screenshots.pop()
 
         if handle == current:
             self.has_history = bool(self._history)
+            self._redraw_fill_meter()
             return False
 
         self._going_back = True
         result = bool(self._switch_callback and self._switch_callback(handle))
         self._going_back = False
         self.has_history = bool(self._history)
+        self._redraw_fill_meter()
         return result
+
+    def _on_before_page_switch(self, _instance, old_page, _new_page):
+        """Capture a thumbnail of *old_page* before it is removed from the tree.
+
+        Called by :class:`PageRouter` just before it removes the old page from
+        the content panel, so the widget is still fully rendered and FBO
+        capture works correctly.  The texture is stashed in
+        :attr:`_pending_screenshot` and consumed by the next
+        :meth:`_on_page_selected` call.
+
+        Uses :class:`~screenshot.SalientScaleStrategy` so that the thumbnail
+        captures at full native resolution then uses max-luminance pooling to
+        downscale: foreground colour landmarks remain at their correct relative
+        positions and are not swamped by the dark background.
+        """
+        if self._going_back:
+            self._pending_screenshot = None
+            return
+        if self._current_handle is None:
+            self._pending_screenshot = None
+            return
+
+        self._pending_screenshot = capture_widget_texture(
+            old_page,
+            self._THUMB_CAPTURE_WIDTH,
+            max(1, int(self._THUMB_CAPTURE_WIDTH * self._FALLBACK_THUMB_ASPECT)),
+            strategy=SalientScaleStrategy()
+        )
 
     def _on_page_selected(self, _instance, handle):
         """React to a :class:`PageRouter` ``on_page_selected`` event.
@@ -372,12 +439,65 @@ class NavBackWidget(Button):
         if self._current_handle is not None and self._current_handle != handle:
             if self._history and self._history[-1] == self._current_handle:
                 self._history.pop()
+                if self._screenshots:
+                    self._screenshots.pop()
             self._history.append(self._current_handle)
+            self._screenshots.append(self._pending_screenshot)
+            self._pending_screenshot = None
             if len(self._history) > self.STACK_MAX_DEPTH:
                 self._history.pop(0)
+                if self._screenshots:
+                    self._screenshots.pop(0)
 
         self._current_handle = handle
         self.has_history = bool(self._history)
+        self._redraw_fill_meter()
+
+    def _redraw_fill_meter(self, *_args):
+        """Redraw the fill-meter thumbnail strip on the widget canvas.
+
+        Each occupied slot is drawn as a scaled thumbnail rectangle at the
+        bottom of the widget.  Slots are separated by a 1-pixel grey line so
+        that individual entries are visually distinct against the black
+        background.  The arrow (drawn in ``canvas.after``) is always rendered
+        on top of the fill meter.
+        """
+        if self._fill_meter_group is not None:
+            self.canvas.remove(self._fill_meter_group)
+            self._fill_meter_group = None
+
+        textures = [t for t in self._screenshots if t is not None]
+        if not textures:
+            return
+
+        n = self.STACK_MAX_DEPTH
+        slot_w = self.width / n
+
+        # Thumbnail display height: derived from first texture's aspect ratio,
+        # but capped so the fill meter does not crowd the arrow area.
+        max_thumb_h = self.height * 0.4
+        first = textures[0]
+        if first.width > 0:
+            thumb_h = min(slot_w * first.height / first.width, max_thumb_h)
+        else:
+            thumb_h = min(slot_w * self._FALLBACK_THUMB_ASPECT, max_thumb_h)
+
+        group = InstructionGroup()
+        for i, tex in enumerate(textures):
+            x = self.x + i * slot_w
+            y = self.y
+            group.add(Color(1, 1, 1, 1))
+            group.add(Rectangle(texture=tex, pos=(x, y), size=(slot_w, thumb_h)))
+
+        # Grey separator lines between occupied slots (black background ≡ invisible)
+        for i in range(1, len(textures)):
+            x_sep = self.x + i * slot_w
+            group.add(Color(77 / 256, 77 / 256, 76 / 256, 1))
+            group.add(Line(points=[x_sep, self.y, x_sep, self.y + thumb_h],
+                           width=self._SLOT_SEPARATOR_WIDTH))
+
+        self.canvas.add(group)
+        self._fill_meter_group = group
 
 
 Builder.load_string("""
@@ -551,6 +671,7 @@ class GlobalContentArea(AnchorLayout):
         )
         nav_back = self.ids.nav_back
         self._router.bind(on_page_selected=nav_back._on_page_selected)
+        self._router.bind(on_before_page_switch=nav_back._on_before_page_switch)
         nav_back._switch_callback = self._router.switch_to_label
         self._router._go_back_callback = nav_back.go_back
 
