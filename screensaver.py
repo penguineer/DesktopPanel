@@ -1,10 +1,32 @@
 """ Screensaver module """
 
+import isodate
+
 from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import BoundedNumericProperty, BooleanProperty, DictProperty, NumericProperty
 from kivy.uix.label import Label
+
+
+def _parse_screen_duration(value) -> float:
+    """Parse a screen duration value to seconds.
+
+    Accepts:
+
+    * A number — interpreted as **seconds** directly.
+    * An ISO 8601 duration string (e.g. ``"PT30S"``, ``"PT1M"``,
+      ``"PT1M30S"``) — parsed via :mod:`isodate` and converted to seconds.
+
+    :raises ValueError: if the value cannot be parsed.
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        duration = isodate.parse_duration(str(value))
+        return duration.total_seconds()
+    except isodate.isoerror.ISO8601Error as e:
+        raise ValueError(f"Cannot parse screen duration value: {value!r}") from e
 
 
 Builder.load_string("""
@@ -98,7 +120,12 @@ class ScreenSaver(Label):
     def _on_conf(self, _instance, _value):
         self._reset_countdown()
         if self.conf:
-            self.block_duration = float(self.conf.get("switch_block_duration", 1.0))
+            raw = self.conf.get("switch_block_duration", 1.0)
+            try:
+                self.block_duration = _parse_screen_duration(raw)
+            except ValueError as e:
+                from kivy import Logger
+                Logger.warning("ScreenSaver: Invalid switch_block_duration %r: %s", raw, e)
 
     def _on_timeout(self, _instance, _value):
         if self.timeout is not None and self.timeout == 0:
@@ -206,10 +233,21 @@ class ScreenSaver(Label):
     def _reset_countdown(self):
         # timeout is:
         #   self.timeout, unless None
-        #   "timeout" from the configuration, unless None
+        #   "timeout" from the configuration, unless None (accepts seconds or ISO 8601 duration)
         #   otherwise 0, i.e. no screensaver
-        timeout = self.timeout if self.timeout is not None else int(self.conf.get("timeout", 0) if self.conf else 0)
-        self.countdown = timeout if timeout else None
+        if self.timeout is not None:
+            timeout = self.timeout
+        elif self.conf:
+            raw = self.conf.get("timeout", 0)
+            try:
+                timeout = _parse_screen_duration(raw)
+            except ValueError as e:
+                from kivy import Logger
+                Logger.warning("ScreenSaver: Invalid timeout %r: %s", raw, e)
+                timeout = 0
+        else:
+            timeout = 0
+        self.countdown = float(timeout) if timeout else None
 
     def _cancel_countdown(self):
         self.countdown = None

@@ -2,7 +2,7 @@
 
 import pytest
 
-from screensaver import ScreenSaver
+from screensaver import ScreenSaver, _parse_screen_duration
 
 
 class _MockAnimation:
@@ -199,3 +199,73 @@ class TestScreenSaverBlockDuration:
         ss.block_duration = 10.0
         ss.trigger_block(duration=0.5)
         assert ss._mock_clock.events[0].delay == 0.5
+
+
+class TestParseScreenDuration:
+    """Tests for the _parse_screen_duration helper."""
+
+    def test_integer_seconds(self):
+        assert _parse_screen_duration(30) == 30.0
+
+    def test_float_seconds(self):
+        assert _parse_screen_duration(1.5) == 1.5
+
+    def test_zero(self):
+        assert _parse_screen_duration(0) == 0.0
+
+    def test_iso_seconds(self):
+        assert _parse_screen_duration("PT30S") == 30.0
+
+    def test_iso_minutes(self):
+        assert _parse_screen_duration("PT5M") == 300.0
+
+    def test_iso_hours(self):
+        assert _parse_screen_duration("PT1H") == 3600.0
+
+    def test_iso_mixed(self):
+        assert _parse_screen_duration("PT1M30S") == 90.0
+
+    def test_invalid_string_raises(self):
+        with pytest.raises(ValueError):
+            _parse_screen_duration("5minutes")
+
+    def test_invalid_iso_raises(self):
+        with pytest.raises(ValueError):
+            _parse_screen_duration("1H30M")  # missing PT prefix
+
+
+class TestScreenSaverResetCountdown:
+    """Tests for _reset_countdown with ISO duration support."""
+
+    class _CountdownHolder:
+        """Minimal stand-in that exercises the real _reset_countdown logic."""
+
+        timeout = None
+        conf = None
+        countdown = None
+
+        _reset_countdown = ScreenSaver._reset_countdown
+
+    def test_reset_countdown_from_plain_seconds(self):
+        h = self._CountdownHolder()
+        h.conf = {"timeout": 60}
+        h._reset_countdown()
+        assert h.countdown == 60.0
+
+    def test_reset_countdown_from_iso_duration(self):
+        h = self._CountdownHolder()
+        h.conf = {"timeout": "PT2M"}
+        h._reset_countdown()
+        assert h.countdown == 120.0
+
+    def test_reset_countdown_zero_disables(self):
+        h = self._CountdownHolder()
+        h.conf = {"timeout": 0}
+        h._reset_countdown()
+        assert h.countdown is None
+
+    def test_reset_countdown_no_conf_is_none(self):
+        h = self._CountdownHolder()
+        h.conf = None
+        h._reset_countdown()
+        assert h.countdown is None

@@ -152,6 +152,8 @@ class PageRouter(EventDispatcher):
 
         if self._current_page is page:
             if go_back_if_current and self._go_back_callback and self._go_back_callback():
+                if block_input and self._on_block_input:
+                    self._on_block_input()
                 return True
             self.dispatch('on_page_selected', page.label)
             return True
@@ -175,16 +177,23 @@ class PageRouter(EventDispatcher):
 
         return True
 
-    def go_back(self) -> bool:
+    def go_back(self, block_input: bool = False) -> bool:
         """Navigate back to the previously visited page.
 
         Delegates to the go-back callback owned by the :class:`NavBackWidget`.
 
+        :param block_input: When ``True``, trigger a short input-block after
+            navigation succeeds so that the newly visible page does not
+            accidentally register the touch that triggered the back navigation.
+            Intended for programmatic (e.g. AMQP) back-navigation.
         :returns: ``True`` if navigation succeeded, ``False`` if there is no
             history or no go-back callback is registered.
         """
         if self._go_back_callback:
-            return bool(self._go_back_callback())
+            result = bool(self._go_back_callback())
+            if result and block_input and self._on_block_input:
+                self._on_block_input()
+            return result
         return False
 
 

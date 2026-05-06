@@ -571,6 +571,22 @@ class TestPageRouterBlockInput:
         )
         return router, block_calls
 
+    def _make_wired_with_block(self):
+        """Return a fully-wired (router, nav, block_calls) triple."""
+        block_calls = []
+        router = PageRouter(
+            content_panel=_MockPanel(),
+            tab_height=64,
+            context_buttons_panel=_MockPanel(),
+            on_block_input=lambda: block_calls.append(True),
+        )
+        nav = _MockNavBack()
+        router.bind(on_page_selected=nav._on_page_selected)
+        router.bind(on_before_page_switch=nav._on_before_page_switch)
+        nav._switch_callback = router.switch_to_label
+        router._go_back_callback = nav.go_back
+        return router, nav, block_calls
+
     def test_block_input_false_does_not_call_callback(self):
         router, block_calls = self._make_router_with_block()
         page = _register(router, 'a')
@@ -610,4 +626,51 @@ class TestPageRouterBlockInput:
         router = _make_router()
         page = _register(router, 'a')
         router.switch_to_page(page, block_input=True)  # should not raise
+
+    def test_go_back_with_block_input_calls_callback(self):
+        router, _nav, block_calls = self._make_wired_with_block()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        result = router.go_back(block_input=True)
+        assert result is True
+        assert block_calls == [True]
+
+    def test_go_back_without_block_input_does_not_call_callback(self):
+        router, _nav, block_calls = self._make_wired_with_block()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        router.go_back(block_input=False)
+        assert block_calls == []
+
+    def test_go_back_block_input_default_is_false(self):
+        router, _nav, block_calls = self._make_wired_with_block()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        router.go_back()
+        assert block_calls == []
+
+    def test_go_back_block_input_not_called_when_no_history(self):
+        router, _nav, block_calls = self._make_wired_with_block()
+        result = router.go_back(block_input=True)
+        assert result is False
+        assert block_calls == []
+
+    def test_switch_to_current_page_go_back_propagates_block_input(self):
+        """block_input must fire when switch_to_page triggers go_back_if_current."""
+        router, _nav, block_calls = self._make_wired_with_block()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        # Navigate back via the go_back_if_current path: switching to page2 when
+        # page2 is already active triggers go_back internally.
+        block_calls.clear()
+        router.switch_to_page(page2, go_back_if_current=True, block_input=True)
+        assert block_calls == [True]
 
