@@ -159,7 +159,9 @@ class TabbedPanelApp(App):
         go_back_if_current = args.get("go_back_if_current", False)
         if handle:
             Clock.schedule_once(
-                lambda dt: self.ca.router.switch_to_label(handle, go_back_if_current=go_back_if_current))
+                lambda dt: self.ca.router.switch_to_label(handle,
+                                                          go_back_if_current=go_back_if_current,
+                                                          block_input=True))
 
     def schedule_update_configuration(self, conf):
         Clock.schedule_once(lambda dt: self.setter('conf')(self, conf))

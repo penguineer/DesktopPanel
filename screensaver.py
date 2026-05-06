@@ -1,5 +1,7 @@
 """ Screensaver module """
 
+import isodate
+
 from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.lang import Builder
@@ -7,12 +9,39 @@ from kivy.properties import BoundedNumericProperty, BooleanProperty, DictPropert
 from kivy.uix.label import Label
 
 
+def _parse_screen_duration(value) -> float:
+    """Parse a screen duration value to seconds.
+
+    Accepts:
+
+    * A number — interpreted as **seconds** directly.
+    * An ISO 8601 duration string (e.g. ``"PT30S"``, ``"PT1M"``,
+      ``"PT1M30S"``) — parsed via :mod:`isodate` and converted to seconds.
+
+    :raises ValueError: if the value cannot be parsed.
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        duration = isodate.parse_duration(str(value))
+        return duration.total_seconds()
+    except isodate.isoerror.ISO8601Error as e:
+        raise ValueError(f"Cannot parse screen duration value: {value!r}") from e
+
+
 Builder.load_string("""
 <ScreenSaver>:
     canvas:
+        # Normal screensaver: black overlay that fades in/out.
+        # Black is used to fully obscure the screen when the display is idle.
         Color:
-            rgba: [0, 0, 0, 1 - root.transparency]  # Is black really the best resting color?
-            
+            rgba: [0, 0, 0, 1 - root.transparency]
+        Rectangle:
+            size: root.size
+            pos: root.pos
+        # Input-block overlay: semi-transparent white (desaturation effect)
+        Color:
+            rgba: [1, 1, 1, root._block_alpha]
         Rectangle:
             size: root.size
             pos: root.pos
@@ -46,11 +75,27 @@ class ScreenSaver(Label):
 
     countdown = NumericProperty(None, allownone=True)
 
+    # --- Input-block properties ---
+
+    _blocking = BooleanProperty(False)
+    """True while a triggered page-switch input block is active."""
+
+    _block_alpha = NumericProperty(0.0)
+    """Alpha of the white desaturation overlay (0 = invisible, 1 = fully white)."""
+
+    block_duration = NumericProperty(1.0)
+    """Duration in seconds of the input block triggered by a programmatic page switch.
+
+    Configurable via ``conf["switch_block_duration"]``.  Defaults to 1 second.
+    """
+
     def __init__(self, **kwargs):
         super(ScreenSaver, self).__init__(**kwargs)
 
         self._anim = None
         self._screen_clock = None
+        self._block_event = None
+        self._block_anim = None
 
         self.bind(conf=self._on_conf)
 
@@ -69,9 +114,18 @@ class ScreenSaver(Label):
             self._countdown_clock.cancel()
         if self._screen_clock:
             self._screen_clock.cancel()
+        if self._block_event:
+            self._block_event.cancel()
 
     def _on_conf(self, _instance, _value):
         self._reset_countdown()
+        if self.conf:
+            raw = self.conf.get("switch_block_duration", 1.0)
+            try:
+                self.block_duration = _parse_screen_duration(raw)
+            except ValueError as e:
+                from kivy import Logger
+                Logger.warning("ScreenSaver: Invalid switch_block_duration %r: %s", raw, e)
 
     def _on_timeout(self, _instance, _value):
         if self.timeout is not None and self.timeout == 0:
@@ -105,6 +159,11 @@ class ScreenSaver(Label):
                                                      timeout=0.5)
 
     def wake_up(self):
+        # When a triggered input block is active, consume the touch without
+        # deactivating the block so that the user cannot dismiss it early.
+        if self._blocking:
+            return True
+
         current_state = self.active
 
         if self._screen_clock:
@@ -118,6 +177,47 @@ class ScreenSaver(Label):
         # returns True when the screensaver was activated
         # This allows to directly block touch events on an active screen saver
         return current_state
+
+    def trigger_block(self, duration=None):
+        """Block input and show a desaturation overlay for *duration* seconds.
+
+        Called when a page switch is triggered programmatically (e.g. via AMQP)
+        so that an unintended user tap on the newly switched page cannot fire.
+        A semi-transparent white overlay is animated in to give the user a clear
+        visual cue that the screen changed and is momentarily locked.
+
+        :param duration: Block duration in seconds.  Defaults to
+            :attr:`block_duration` (configurable via ``conf["switch_block_duration"]``).
+        """
+        actual_duration = duration if duration is not None else self.block_duration
+
+        # Cancel any in-progress block so we can restart the timer.
+        if self._block_event is not None:
+            self._block_event.cancel()
+            self._block_event = None
+        if self._block_anim is not None:
+            self._block_anim.cancel(self)
+            self._block_anim = None
+
+        self._blocking = True
+
+        # Fade the white overlay in quickly, then schedule fade-out after duration.
+        self._block_anim = Animation(_block_alpha=0.3, duration=0.1)
+        self._block_anim.start(self)
+        self._block_event = Clock.schedule_once(lambda dt: self._end_block(), actual_duration)
+
+    def _end_block(self):
+        """Fade out the desaturation overlay and release the input block."""
+        self._block_event = None
+        if self._block_anim is not None:
+            self._block_anim.cancel(self)
+        self._block_anim = Animation(_block_alpha=0.0, duration=0.3)
+        self._block_anim.bind(on_complete=lambda *_: self._clear_blocking())
+        self._block_anim.start(self)
+
+    def _clear_blocking(self):
+        self._block_anim = None
+        self._blocking = False
 
     def _on_countdown(self, _instance, _value):
         if self.disabled or self.countdown is None or self.countdown > 0:
@@ -133,9 +233,20 @@ class ScreenSaver(Label):
     def _reset_countdown(self):
         # timeout is:
         #   self.timeout, unless None
-        #   "timeout" from the configuration, unless None
+        #   "timeout" from the configuration, unless None (accepts seconds or ISO 8601 duration)
         #   otherwise 0, i.e. no screensaver
-        timeout = self.timeout if self.timeout is not None else int(self.conf.get("timeout", 0) if self.conf else 0)
+        if self.timeout is not None:
+            timeout = self.timeout
+        elif self.conf:
+            raw = self.conf.get("timeout", 0)
+            try:
+                timeout = int(_parse_screen_duration(raw))
+            except (ValueError, OverflowError) as e:
+                from kivy import Logger
+                Logger.warning("ScreenSaver: Invalid timeout %r: %s", raw, e)
+                timeout = 0
+        else:
+            timeout = 0
         self.countdown = timeout if timeout else None
 
     def _cancel_countdown(self):
