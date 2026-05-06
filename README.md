@@ -148,4 +148,4 @@ Uses [Free Icons from the Streamline Icons Pack](https://streamlineicons.com/).
 
 ## License
 
-[MIT](LICENSE.txt) © 2021-2023 Stefan Haun and contributors
+[MIT](LICENSE.txt) © 2021 Stefan Haun and contributors
