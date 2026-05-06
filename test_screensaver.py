@@ -84,17 +84,18 @@ class _MockScreenSaver:
         self._mock_clock = _MockClock()
         self._screen_clock = None
 
-    # --- borrow the real methods from ScreenSaver ---
+    # Borrow wake_up from the real ScreenSaver; it only needs _blocking,
+    # active, _screen_clock, screen_active, and _reset_countdown — all of
+    # which are provided by this mock.
     wake_up = ScreenSaver.wake_up
-    trigger_block = ScreenSaver.trigger_block
-    _end_block = ScreenSaver._end_block
-    _clear_blocking = ScreenSaver._clear_blocking
 
     def _reset_countdown(self):
         pass  # no-op: no Kivy Clock available in tests
 
-    # Patch trigger_block to use the mock clock and animations.
-    def trigger_block(self, duration=None):  # noqa: F811 (intentional override)
+    # trigger_block, _end_block, and _clear_blocking are fully overridden
+    # below to use the mock Clock and animation objects instead of Kivy's.
+
+    def trigger_block(self, duration=None):
         actual_duration = duration if duration is not None else self.block_duration
 
         if self._block_event is not None:
@@ -110,7 +111,7 @@ class _MockScreenSaver:
         self._block_event = self._mock_clock.schedule_once(
             lambda dt: self._end_block(), actual_duration)
 
-    def _end_block(self):  # noqa: F811
+    def _end_block(self):
         self._block_event = None
         if self._block_anim is not None:
             self._block_anim.cancel(self)
@@ -119,7 +120,7 @@ class _MockScreenSaver:
         anim.start(self)
         self._block_anim = anim
 
-    def _clear_blocking(self):  # noqa: F811
+    def _clear_blocking(self):
         self._block_anim = None
         self._blocking = False
 

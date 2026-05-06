@@ -10,7 +10,8 @@ from kivy.uix.label import Label
 Builder.load_string("""
 <ScreenSaver>:
     canvas:
-        # Normal screensaver: black overlay that fades in/out
+        # Normal screensaver: black overlay that fades in/out.
+        # Black is used to fully obscure the screen when the display is idle.
         Color:
             rgba: [0, 0, 0, 1 - root.transparency]
         Rectangle:
