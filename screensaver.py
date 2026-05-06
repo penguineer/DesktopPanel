@@ -240,14 +240,14 @@ class ScreenSaver(Label):
         elif self.conf:
             raw = self.conf.get("timeout", 0)
             try:
-                timeout = _parse_screen_duration(raw)
-            except ValueError as e:
+                timeout = int(_parse_screen_duration(raw))
+            except (ValueError, OverflowError) as e:
                 from kivy import Logger
                 Logger.warning("ScreenSaver: Invalid timeout %r: %s", raw, e)
                 timeout = 0
         else:
             timeout = 0
-        self.countdown = float(timeout) if timeout else None
+        self.countdown = timeout if timeout else None
 
     def _cancel_countdown(self):
         self.countdown = None

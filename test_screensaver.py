@@ -250,13 +250,13 @@ class TestScreenSaverResetCountdown:
         h = self._CountdownHolder()
         h.conf = {"timeout": 60}
         h._reset_countdown()
-        assert h.countdown == 60.0
+        assert h.countdown == 60
 
     def test_reset_countdown_from_iso_duration(self):
         h = self._CountdownHolder()
         h.conf = {"timeout": "PT2M"}
         h._reset_countdown()
-        assert h.countdown == 120.0
+        assert h.countdown == 120
 
     def test_reset_countdown_zero_disables(self):
         h = self._CountdownHolder()
