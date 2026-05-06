@@ -1,5 +1,6 @@
-import re
 import time
+
+import isodate
 
 from kivy.clock import Clock
 from kivy.core.window import Window
@@ -23,20 +24,18 @@ def _parse_nav_ttl(value) -> float:
     Accepts:
 
     * A number — interpreted as **minutes** and converted to seconds.
-    * An ISO 8601 duration string (subset ``PTnHmM``, e.g. ``"PT1H"``,
-      ``"PT30M"``, ``"PT1H30M"``) — converted to seconds.
+    * An ISO 8601 duration string (e.g. ``"PT1H"``, ``"PT30M"``,
+      ``"PT1H30M"``) — parsed via :mod:`isodate` and converted to seconds.
 
     :raises ValueError: if the value cannot be parsed.
     """
     if isinstance(value, (int, float)):
         return float(value) * 60.0
-    m = re.match(r'^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?$', str(value))
-    # The pattern allows bare "PT" (no H or M), so require at least one group.
-    if m and (m.group(1) or m.group(2)):
-        hours = float(m.group(1) or 0)
-        minutes = float(m.group(2) or 0)
-        return hours * 3600.0 + minutes * 60.0
-    raise ValueError(f"Cannot parse navigation TTL value: {value!r}")
+    try:
+        duration = isodate.parse_duration(str(value))
+        return duration.total_seconds()
+    except isodate.isoerror.ISO8601Error as e:
+        raise ValueError(f"Cannot parse navigation TTL value: {value!r}") from e
 
 
 class PageRouter(EventDispatcher):
@@ -514,6 +513,20 @@ class NavBackWidget(Button):
         delay = max(0.0, earliest - now)
         self._expiry_event = Clock.schedule_once(self._on_expiry_timer, delay)
 
+    def set_stack_ttl(self, ttl_seconds: float) -> None:
+        """Set the time-to-live for navigation stack entries.
+
+        All existing entries are immediately evaluated against the new TTL
+        and the expiry timer is rescheduled accordingly.
+
+        :param ttl_seconds: New TTL in seconds.  Must be a non-negative number.
+        :raises ValueError: if *ttl_seconds* is negative.
+        """
+        if ttl_seconds < 0:
+            raise ValueError(f"stack TTL must be non-negative, got {ttl_seconds!r}")
+        self._ttl_seconds = ttl_seconds
+        self._schedule_expiry()
+
     def _redraw_fill_meter(self, *_args):
         """Redraw the fill-meter slot strip on the widget canvas.
 
@@ -780,9 +793,7 @@ class GlobalContentArea(AnchorLayout):
         ttl_value = nav_conf.get("stack_ttl", None)
         if ttl_value is not None:
             try:
-                nav_back = self.ids.nav_back
-                nav_back._ttl_seconds = _parse_nav_ttl(ttl_value)
-                nav_back._schedule_expiry()
+                self.ids.nav_back.set_stack_ttl(_parse_nav_ttl(ttl_value))
             except ValueError as e:
                 from kivy import Logger
                 Logger.warning("App: Invalid navigation stack_ttl value %r: %s", ttl_value, e)

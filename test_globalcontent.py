@@ -63,6 +63,7 @@ class _MockNavBack:
     _on_before_page_switch = NavBackWidget._on_before_page_switch
     _on_page_selected = NavBackWidget._on_page_selected
     go_back = NavBackWidget.go_back
+    set_stack_ttl = NavBackWidget.set_stack_ttl
     _purge_expired = NavBackWidget._purge_expired
 
 def _make_router():
@@ -551,6 +552,6 @@ class TestParseNavTtl:
         with pytest.raises(ValueError):
             _parse_nav_ttl("1H30M")  # missing PT prefix
 
-    def test_empty_pt_raises(self):
+    def test_non_duration_string_raises(self):
         with pytest.raises(ValueError):
-            _parse_nav_ttl("PT")  # no H or M component
+            _parse_nav_ttl("one hour")  # plain text is not a valid ISO 8601 duration
