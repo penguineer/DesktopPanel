@@ -1,3 +1,7 @@
+import re
+import time as _time
+
+from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.event import EventDispatcher
 from kivy.lang import Builder
@@ -11,6 +15,27 @@ from kivy.uix.button import Button
 
 from kivy.animation import Animation
 from kivy.graphics import Color, Rectangle, RoundedRectangle, Line, InstructionGroup
+
+
+def _parse_nav_ttl(value) -> float:
+    """Parse a navigation TTL value to seconds.
+
+    Accepts:
+
+    * A number — interpreted as **minutes** and converted to seconds.
+    * An ISO 8601 duration string (subset ``PTnHmM``, e.g. ``"PT1H"``,
+      ``"PT30M"``, ``"PT1H30M"``) — converted to seconds.
+
+    :raises ValueError: if the value cannot be parsed.
+    """
+    if isinstance(value, (int, float)):
+        return float(value) * 60.0
+    m = re.match(r'^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?$', str(value))
+    if m and (m.group(1) or m.group(2)):
+        hours = float(m.group(1) or 0)
+        minutes = float(m.group(2) or 0)
+        return hours * 3600.0 + minutes * 60.0
+    raise ValueError(f"Cannot parse navigation TTL value: {value!r}")
 
 
 class PageRouter(EventDispatcher):
@@ -327,6 +352,9 @@ class NavBackWidget(Button):
     STACK_MAX_DEPTH = 3
     """Maximum number of entries kept on the navigation history stack."""
 
+    _DEFAULT_TTL_SECONDS = 3600.0
+    """Default time-to-live for a navigation stack entry, in seconds (1 hour)."""
+
     # Fallback inverse aspect ratio (height/width) used to size fill-meter slots
     # when the Window dimensions are not yet available.  9/16 is the portrait
     # reciprocal of the standard 16:9 landscape display used by the target hardware.
@@ -353,11 +381,17 @@ class NavBackWidget(Button):
     """
 
     def __init__(self, **kwargs):
+        # Each entry in _history is a (handle: str, pushed_at: float) tuple,
+        # where pushed_at is a time.monotonic() timestamp recorded when the entry
+        # was pushed.  Expiry is evaluated as pushed_at + _ttl_seconds at
+        # purge/check time so that a TTL config change applies to all entries.
         self._history = []
         self._going_back = False
         self._current_handle = None
         self._switch_callback = None
         self._fill_meter_group = None
+        self._ttl_seconds = self._DEFAULT_TTL_SECONDS
+        self._expiry_event = None  # single pending Clock event for the next expiry
         super().__init__(**kwargs)
         # Read the real display aspect ratio (portrait h/w) once at startup so
         # fill-meter slots reflect the actual screen proportions.  Falls back to
@@ -374,25 +408,27 @@ class NavBackWidget(Button):
     def go_back(self) -> bool:
         """Navigate to the previously visited page.
 
-        Pops entries from the navigation stack until a page different from the
-        current one is found, then switches to it without pushing the current
-        page back onto the stack.  Any intermediate stack entries that match
-        the current page are discarded.
+        Purges any TTL-expired entries first, then pops entries from the
+        navigation stack until a page different from the current one is found,
+        then switches to it without pushing the current page back onto the stack.
+        Any intermediate stack entries that match the current page are discarded.
 
         :returns: ``True`` if navigation succeeded, ``False`` if the stack is
             empty or contains only entries matching the current page.
         """
+        self._purge_expired()
         if not self._history:
             return False
 
         current = self._current_handle
-        handle = self._history.pop()
+        handle, _ = self._history.pop()
         while handle == current and self._history:
-            handle = self._history.pop()
+            handle, _ = self._history.pop()
 
         if handle == current:
             self.has_history = bool(self._history)
             self._redraw_fill_meter()
+            self._schedule_expiry()
             return False
 
         self._going_back = True
@@ -400,6 +436,7 @@ class NavBackWidget(Button):
         self._going_back = False
         self.has_history = bool(self._history)
         self._redraw_fill_meter()
+        self._schedule_expiry()
         return result
 
     def _on_before_page_switch(self, _instance, _old_page, _new_page):
@@ -413,21 +450,65 @@ class NavBackWidget(Button):
         If the top of the stack already holds the same handle that is being
         pushed, it is popped first so that the handle is always pushed exactly
         once — preventing two consecutive identical entries.
+        Each pushed entry is stamped with an absolute expiry time
+        (``time.monotonic() + _ttl_seconds``) so it can be silently discarded
+        once the user attention window has passed.
         """
         if self._going_back:
             self._current_handle = handle
             return
 
         if self._current_handle is not None and self._current_handle != handle:
-            if self._history and self._history[-1] == self._current_handle:
+            if self._history and self._history[-1][0] == self._current_handle:
                 self._history.pop()
-            self._history.append(self._current_handle)
+            expire_at = _time.monotonic() + self._ttl_seconds
+            self._history.append((self._current_handle, expire_at))
             if len(self._history) > self.STACK_MAX_DEPTH:
                 self._history.pop(0)
+            self._schedule_expiry()
 
         self._current_handle = handle
         self.has_history = bool(self._history)
         self._redraw_fill_meter()
+
+    def _purge_expired(self):
+        """Remove all TTL-expired entries from the history stack.
+
+        Called lazily before any pop operation and proactively from the
+        scheduled expiry timer.  Updates :attr:`has_history` and redraws
+        the fill meter if any entries were removed.
+        """
+        now = _time.monotonic()
+        before = len(self._history)
+        self._history = [(h, e) for h, e in self._history if e > now]
+        if len(self._history) != before:
+            self.has_history = bool(self._history)
+            self._redraw_fill_meter()
+        self._schedule_expiry()
+
+    def _on_expiry_timer(self, _dt):
+        """Clock callback: fired when the oldest stack entry is due to expire."""
+        self._expiry_event = None
+        self._purge_expired()
+
+    def _schedule_expiry(self):
+        """Schedule (or cancel) a single Clock event for the next TTL expiry.
+
+        Cancels any previously scheduled event and sets a new one timed for
+        when the oldest remaining stack entry expires.  No event is scheduled
+        when the stack is empty.
+        """
+        if self._expiry_event is not None:
+            self._expiry_event.cancel()
+            self._expiry_event = None
+
+        if not self._history:
+            return
+
+        now = _time.monotonic()
+        earliest = min(e for _, e in self._history)
+        delay = max(0.0, earliest - now)
+        self._expiry_event = Clock.schedule_once(self._on_expiry_timer, delay)
 
     def _redraw_fill_meter(self, *_args):
         """Redraw the fill-meter slot strip on the widget canvas.
@@ -678,6 +759,18 @@ class GlobalContentArea(AnchorLayout):
             widget = item['widget']
             if conf_lambda is not None and hasattr(widget, 'conf'):
                 widget.conf = conf_lambda(conf) if conf else None
+        self._apply_nav_conf(conf)
+
+    def _apply_nav_conf(self, conf: dict) -> None:
+        """Read ``conf["navigation"]`` and apply settings to the nav-back widget."""
+        nav_conf = conf.get("navigation", {}) if conf else {}
+        ttl_value = nav_conf.get("ttl", None)
+        if ttl_value is not None:
+            try:
+                self.ids.nav_back._ttl_seconds = _parse_nav_ttl(ttl_value)
+            except ValueError as e:
+                from kivy import Logger
+                Logger.warning("App: Invalid navigation TTL value %r: %s", ttl_value, e)
 
     def _page_conf(self, page):
         if page and page.conf_lambda:

@@ -1,6 +1,10 @@
 """ Pytest tests for the navigation stack in the globalcontent module """
 
-from globalcontent import PageRouter, NavBackWidget
+import time
+
+import pytest
+
+from globalcontent import PageRouter, NavBackWidget, _parse_nav_ttl
 
 
 class _MockPage:
@@ -36,6 +40,7 @@ class _MockNavBack:
     _BORDER_GAP = NavBackWidget._BORDER_GAP
     _ARROW_LEFT = NavBackWidget._ARROW_LEFT
     _ARROW_RIGHT = NavBackWidget._ARROW_RIGHT
+    _DEFAULT_TTL_SECONDS = NavBackWidget._DEFAULT_TTL_SECONDS
 
     def __init__(self):
         self._history = []
@@ -46,13 +51,19 @@ class _MockNavBack:
         self.width = 64
         self.height = 50
         self._display_aspect = self._FALLBACK_THUMB_ASPECT
+        self._ttl_seconds = self._DEFAULT_TTL_SECONDS
+        self._expiry_event = None
 
     def _redraw_fill_meter(self, *_args):
         pass  # no-op in tests; canvas not available
 
+    def _schedule_expiry(self):
+        pass  # no-op in tests; no Kivy Clock available
+
     _on_before_page_switch = NavBackWidget._on_before_page_switch
     _on_page_selected = NavBackWidget._on_page_selected
     go_back = NavBackWidget.go_back
+    _purge_expired = NavBackWidget._purge_expired
 
 def _make_router():
     return PageRouter(
@@ -211,7 +222,7 @@ class TestNavBackWidgetStack:
         for page in pages:
             router.switch_to_page(page)
         # Index 0 (the very first page) was dropped; index 1 is now the oldest
-        assert nav._history[0] == 'p1'
+        assert nav._history[0][0] == 'p1'
 
 
 class TestGoBackIfCurrent:
@@ -303,13 +314,13 @@ class TestNoDuplicatesOnStack:
         popped first and then the page is pushed again — so only one entry
         for that handle remains at the top of the stack."""
         _, nav = self._make_wired()
-        # Manually seed history with 'a' on top, then simulate a push of 'a' again.
+        # Manually seed history with 'a' on top (use a far-future expiry).
         nav._current_handle = 'a'
-        nav._history = ['a']
+        nav._history = [('a', float('inf'))]
         # Navigate to 'b': 'a' is popped from the stack and then re-pushed, so
         # the stack still contains exactly one 'a'.
         nav._on_page_selected(None, 'b')
-        assert nav._history == ['a']
+        assert [h for h, _ in nav._history] == ['a']
 
     def test_go_back_skips_current_page_entries(self):
         """go_back pops past entries that match the current page."""
@@ -319,7 +330,7 @@ class TestNoDuplicatesOnStack:
         router.switch_to_page(page1)
         router.switch_to_page(page2)
         # Manually inject a duplicate of current page ('b') at the top of the stack.
-        nav._history.append('b')
+        nav._history.append(('b', float('inf')))
         # go_back should skip 'b' and land on 'a'.
         nav.go_back()
         assert router.current_page is page1
@@ -328,7 +339,7 @@ class TestNoDuplicatesOnStack:
         """go_back returns False if the stack contains only entries matching current."""
         _, nav = self._make_wired()
         nav._current_handle = 'a'
-        nav._history = ['a', 'a', 'a']
+        nav._history = [('a', float('inf')), ('a', float('inf')), ('a', float('inf'))]
         nav.has_history = True
         result = nav.go_back()
         assert result is False
