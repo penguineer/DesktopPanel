@@ -555,3 +555,59 @@ class TestParseNavTtl:
     def test_non_duration_string_raises(self):
         with pytest.raises(ValueError):
             _parse_nav_ttl("one hour")  # plain text is not a valid ISO 8601 duration
+
+
+class TestPageRouterBlockInput:
+    """Tests for the block_input parameter on PageRouter.switch_to_page / switch_to_label."""
+
+    def _make_router_with_block(self):
+        """Return a router and a list that collects block_input callback calls."""
+        block_calls = []
+        router = PageRouter(
+            content_panel=_MockPanel(),
+            tab_height=64,
+            context_buttons_panel=_MockPanel(),
+            on_block_input=lambda: block_calls.append(True),
+        )
+        return router, block_calls
+
+    def test_block_input_false_does_not_call_callback(self):
+        router, block_calls = self._make_router_with_block()
+        page = _register(router, 'a')
+        router.switch_to_page(page, block_input=False)
+        assert block_calls == []
+
+    def test_block_input_true_calls_callback(self):
+        router, block_calls = self._make_router_with_block()
+        page = _register(router, 'a')
+        router.switch_to_page(page, block_input=True)
+        assert block_calls == [True]
+
+    def test_block_input_default_is_false(self):
+        router, block_calls = self._make_router_with_block()
+        page = _register(router, 'a')
+        router.switch_to_page(page)
+        assert block_calls == []
+
+    def test_block_input_via_switch_to_label(self):
+        router, block_calls = self._make_router_with_block()
+        _register(router, 'a')
+        router.switch_to_label('a', block_input=True)
+        assert block_calls == [True]
+
+    def test_block_input_not_called_when_page_is_none(self):
+        router, block_calls = self._make_router_with_block()
+        router.switch_to_page(None, block_input=True)
+        assert block_calls == []
+
+    def test_block_input_not_called_for_unknown_label(self):
+        router, block_calls = self._make_router_with_block()
+        router.switch_to_label('nonexistent', block_input=True)
+        assert block_calls == []
+
+    def test_block_input_no_callback_registered(self):
+        """block_input=True with no callback must not raise."""
+        router = _make_router()
+        page = _register(router, 'a')
+        router.switch_to_page(page, block_input=True)  # should not raise
+

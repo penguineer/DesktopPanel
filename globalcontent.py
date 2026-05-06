@@ -50,7 +50,7 @@ class PageRouter(EventDispatcher):
     """
 
     def __init__(self, content_panel, tab_height, context_buttons_panel, on_page_changed=None,
-                 on_wake_screensaver=None):
+                 on_wake_screensaver=None, on_block_input=None):
         super().__init__()
         self.register_event_type('on_page_selected')
         self.register_event_type('on_before_page_switch')
@@ -60,6 +60,7 @@ class PageRouter(EventDispatcher):
         self._context_buttons_panel = context_buttons_panel
         self._on_page_changed = on_page_changed
         self._on_wake_screensaver = on_wake_screensaver
+        self._on_block_input = on_block_input
 
         self._pages_by_handle = {}
         self._current_page = None
@@ -102,7 +103,7 @@ class PageRouter(EventDispatcher):
                 self.switch_to_label(handle)
 
     def switch_to_label(self, handle: str, trip_screensaver: bool = True,
-                        go_back_if_current: bool = True) -> bool:
+                        go_back_if_current: bool = True, block_input: bool = False) -> bool:
         """Switch to the page identified by *handle*.
 
         :param handle: The page label to switch to.
@@ -113,14 +114,19 @@ class PageRouter(EventDispatcher):
             that is already active triggers a navigation back on the history
             stack instead of staying on the same page.  Pass ``False`` to force
             the page open without going back (e.g. for programmatic navigation).
+        :param block_input: When ``True``, trigger a short input-block with a
+            desaturation overlay after the page switch so that an accidental tap
+            on the new page cannot fire.  Intended for programmatic (e.g. AMQP)
+            page switches.  Defaults to ``False``.
         :returns: ``True`` if the page was found and switched to.
         """
         page = self._pages_by_handle.get(handle)
         return self.switch_to_page(page, trip_screensaver=trip_screensaver,
-                                   go_back_if_current=go_back_if_current)
+                                   go_back_if_current=go_back_if_current,
+                                   block_input=block_input)
 
     def switch_to_page(self, page, trip_screensaver: bool = True,
-                       go_back_if_current: bool = True):
+                       go_back_if_current: bool = True, block_input: bool = False):
         """Switch to the page.
 
         :param page: The page to switch to.
@@ -131,6 +137,10 @@ class PageRouter(EventDispatcher):
             that is already active triggers a navigation back on the history
             stack instead of staying on the same page.  Pass ``False`` to force
             the page open without going back (e.g. for programmatic navigation).
+        :param block_input: When ``True``, trigger a short input-block with a
+            desaturation overlay after the page switch so that an accidental tap
+            on the new page cannot fire.  Intended for programmatic (e.g. AMQP)
+            page switches.  Defaults to ``False``.
         :returns: ``True`` if the page was found and switched to.
         """
 
@@ -157,6 +167,9 @@ class PageRouter(EventDispatcher):
 
         if self._on_page_changed:
             self._on_page_changed(page)
+
+        if block_input and self._on_block_input:
+            self._on_block_input()
 
         self.dispatch('on_page_selected', page.label)
 
@@ -749,6 +762,7 @@ class GlobalContentArea(AnchorLayout):
             context_buttons_panel=self.ids.ContextButtons,
             on_page_changed=lambda page: setattr(self, '_current_page', page),
             on_wake_screensaver=self._wake_screensaver,
+            on_block_input=self._block_screensaver,
         )
         nav_back = self.ids.nav_back
         self._router.bind(on_page_selected=nav_back._on_page_selected)
@@ -767,6 +781,10 @@ class GlobalContentArea(AnchorLayout):
     def _wake_screensaver(self) -> None:
         if self.screensaver:
             self.screensaver.wake_up()
+
+    def _block_screensaver(self) -> None:
+        if self.screensaver:
+            self.screensaver.trigger_block()
 
     def _on_conf(self, _instance, conf: dict) -> None:
         for page in self._pages:

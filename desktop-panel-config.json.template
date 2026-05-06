@@ -1,7 +1,8 @@
 {
   "screen": {
     "brightness": <maximum backlight brightness>,
-    "timeout": <timeout in seconds as integer, 0 to deactivate>
+    "timeout": <timeout in seconds as integer, 0 to deactivate>,
+    "switch_block_duration": <seconds to block input after a programmatic page switch, default 1.0>
   },
   "navigation": {
     "stack_ttl": "<time-to-live for back-navigation stack entries: number (minutes) or ISO 8601 duration (e.g. \"PT1H\"), default PT1H>"
