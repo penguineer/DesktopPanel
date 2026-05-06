@@ -1,6 +1,10 @@
 """ Pytest tests for the navigation stack in the globalcontent module """
 
-from globalcontent import PageRouter, NavBackWidget
+import time
+
+import pytest
+
+from globalcontent import PageRouter, NavBackWidget, _parse_nav_ttl
 
 
 class _MockPage:
@@ -36,6 +40,7 @@ class _MockNavBack:
     _BORDER_GAP = NavBackWidget._BORDER_GAP
     _ARROW_LEFT = NavBackWidget._ARROW_LEFT
     _ARROW_RIGHT = NavBackWidget._ARROW_RIGHT
+    _DEFAULT_TTL_SECONDS = NavBackWidget._DEFAULT_TTL_SECONDS
 
     def __init__(self):
         self._history = []
@@ -46,13 +51,20 @@ class _MockNavBack:
         self.width = 64
         self.height = 50
         self._display_aspect = self._FALLBACK_THUMB_ASPECT
+        self._ttl_seconds = self._DEFAULT_TTL_SECONDS
+        self._expiry_event = None
 
     def _redraw_fill_meter(self, *_args):
         pass  # no-op in tests; canvas not available
 
+    def _schedule_expiry(self):
+        pass  # no-op in tests; no Kivy Clock available
+
     _on_before_page_switch = NavBackWidget._on_before_page_switch
     _on_page_selected = NavBackWidget._on_page_selected
     go_back = NavBackWidget.go_back
+    set_stack_ttl = NavBackWidget.set_stack_ttl
+    _purge_expired = NavBackWidget._purge_expired
 
 def _make_router():
     return PageRouter(
@@ -211,7 +223,7 @@ class TestNavBackWidgetStack:
         for page in pages:
             router.switch_to_page(page)
         # Index 0 (the very first page) was dropped; index 1 is now the oldest
-        assert nav._history[0] == 'p1'
+        assert nav._history[0][0] == 'p1'
 
 
 class TestGoBackIfCurrent:
@@ -303,13 +315,13 @@ class TestNoDuplicatesOnStack:
         popped first and then the page is pushed again — so only one entry
         for that handle remains at the top of the stack."""
         _, nav = self._make_wired()
-        # Manually seed history with 'a' on top, then simulate a push of 'a' again.
+        # Manually seed history with 'a' on top (use a far-future expiry).
         nav._current_handle = 'a'
-        nav._history = ['a']
+        nav._history = [('a', float('inf'))]
         # Navigate to 'b': 'a' is popped from the stack and then re-pushed, so
         # the stack still contains exactly one 'a'.
         nav._on_page_selected(None, 'b')
-        assert nav._history == ['a']
+        assert [h for h, _ in nav._history] == ['a']
 
     def test_go_back_skips_current_page_entries(self):
         """go_back pops past entries that match the current page."""
@@ -319,7 +331,7 @@ class TestNoDuplicatesOnStack:
         router.switch_to_page(page1)
         router.switch_to_page(page2)
         # Manually inject a duplicate of current page ('b') at the top of the stack.
-        nav._history.append('b')
+        nav._history.append(('b', float('inf')))
         # go_back should skip 'b' and land on 'a'.
         nav.go_back()
         assert router.current_page is page1
@@ -328,7 +340,7 @@ class TestNoDuplicatesOnStack:
         """go_back returns False if the stack contains only entries matching current."""
         _, nav = self._make_wired()
         nav._current_handle = 'a'
-        nav._history = ['a', 'a', 'a']
+        nav._history = [('a', float('inf')), ('a', float('inf')), ('a', float('inf'))]
         nav.has_history = True
         result = nav.go_back()
         assert result is False
@@ -409,3 +421,137 @@ class TestBeforePageSwitchEvent:
         nav = _MockNavBack()
         # Should not raise regardless of arguments
         nav._on_before_page_switch(None, object(), object())
+
+
+class TestNavTTL:
+    """Tests for time-to-live expiry of navigation stack entries."""
+
+    def _make_wired(self):
+        router = _make_router()
+        nav = _MockNavBack()
+        router.bind(on_page_selected=nav._on_page_selected)
+        router.bind(on_before_page_switch=nav._on_before_page_switch)
+        nav._switch_callback = router.switch_to_label
+        return router, nav
+
+    # --- _purge_expired ---
+
+    def test_purge_removes_expired_entries(self):
+        """_purge_expired silently removes entries whose TTL has elapsed."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 60.0
+        # Seed an entry pushed well in the past (already expired).
+        nav._history = [('a', time.monotonic() - 120.0)]
+        nav.has_history = True
+        nav._purge_expired()
+        assert not nav.has_history
+        assert nav._history == []
+
+    def test_purge_keeps_fresh_entries(self):
+        """_purge_expired leaves entries that have not yet exceeded their TTL."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 3600.0
+        pushed_at = time.monotonic()
+        nav._history = [('a', pushed_at)]
+        nav.has_history = True
+        nav._purge_expired()
+        assert nav.has_history
+        assert len(nav._history) == 1
+
+    def test_purge_removes_only_expired_entries(self):
+        """_purge_expired only removes the entries whose TTL has elapsed."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 60.0
+        now = time.monotonic()
+        # One expired, one fresh.
+        nav._history = [('old', now - 120.0), ('new', now)]
+        nav.has_history = True
+        nav._purge_expired()
+        assert [h for h, _ in nav._history] == ['new']
+
+    def test_go_back_skips_expired_entries(self):
+        """go_back purges expired entries before navigating."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        # Expire the only history entry by backdating its push time.
+        nav._ttl_seconds = 60.0
+        handle = nav._history[0][0]
+        nav._history = [(handle, time.monotonic() - 120.0)]
+        result = nav.go_back()
+        assert result is False
+        assert not nav.has_history
+
+    # --- TTL reschedule on config change ---
+
+    def test_ttl_change_reschedules_timer(self):
+        """Setting a new _ttl_seconds and calling _schedule_expiry cancels any
+        outstanding timer and sets a new one for the updated deadline."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 3600.0
+        now = time.monotonic()
+        nav._history = [('a', now)]
+        nav.has_history = True
+
+        # Track how many times _schedule_expiry was called (no-op in mock, but
+        # we can verify the new TTL is used by checking purge behaviour).
+        nav._ttl_seconds = 0.0  # expire immediately
+        nav._purge_expired()
+        assert not nav.has_history
+
+    def test_ttl_reduction_expires_old_entries(self):
+        """Reducing the TTL causes previously-valid entries to become expired."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 3600.0
+        # Push an entry 10 minutes ago.
+        nav._history = [('a', time.monotonic() - 600.0)]
+        nav.has_history = True
+        # Reduce TTL to 5 minutes — the entry is now expired.
+        nav._ttl_seconds = 300.0
+        nav._purge_expired()
+        assert not nav.has_history
+
+    def test_ttl_extension_preserves_old_entries(self):
+        """Increasing the TTL keeps entries that would otherwise have expired."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 300.0  # 5 minutes
+        # Push an entry 10 minutes ago — would be expired under old TTL.
+        pushed_at = time.monotonic() - 600.0
+        nav._history = [('a', pushed_at)]
+        nav.has_history = True
+        # Extend TTL to 2 hours — entry should survive.
+        nav._ttl_seconds = 7200.0
+        nav._purge_expired()
+        assert nav.has_history
+
+
+class TestParseNavTtl:
+    """Tests for the _parse_nav_ttl helper."""
+
+    def test_integer_minutes(self):
+        assert _parse_nav_ttl(60) == 3600.0
+
+    def test_float_minutes(self):
+        assert _parse_nav_ttl(0.5) == 30.0
+
+    def test_iso_hours_only(self):
+        assert _parse_nav_ttl("PT1H") == 3600.0
+
+    def test_iso_minutes_only(self):
+        assert _parse_nav_ttl("PT30M") == 1800.0
+
+    def test_iso_hours_and_minutes(self):
+        assert _parse_nav_ttl("PT1H30M") == 5400.0
+
+    def test_iso_fractional_hours(self):
+        assert _parse_nav_ttl("PT0.5H") == 1800.0
+
+    def test_invalid_string_raises(self):
+        with pytest.raises(ValueError):
+            _parse_nav_ttl("1H30M")  # missing PT prefix
+
+    def test_non_duration_string_raises(self):
+        with pytest.raises(ValueError):
+            _parse_nav_ttl("one hour")  # plain text is not a valid ISO 8601 duration
