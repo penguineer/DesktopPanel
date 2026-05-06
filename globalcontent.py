@@ -31,6 +31,7 @@ def _parse_nav_ttl(value) -> float:
     if isinstance(value, (int, float)):
         return float(value) * 60.0
     m = re.match(r'^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?$', str(value))
+    # The pattern allows bare "PT" (no H or M), so require at least one group.
     if m and (m.group(1) or m.group(2)):
         hours = float(m.group(1) or 0)
         minutes = float(m.group(2) or 0)
@@ -479,11 +480,12 @@ class NavBackWidget(Button):
         the fill meter if any entries were removed.
         """
         now = time.monotonic()
-        before = len(self._history)
+        if not any(t + self._ttl_seconds <= now for _, t in self._history):
+            self._schedule_expiry()
+            return
         self._history = [(h, t) for h, t in self._history if t + self._ttl_seconds > now]
-        if len(self._history) != before:
-            self.has_history = bool(self._history)
-            self._redraw_fill_meter()
+        self.has_history = bool(self._history)
+        self._redraw_fill_meter()
         self._schedule_expiry()
 
     def _on_expiry_timer(self, _dt):

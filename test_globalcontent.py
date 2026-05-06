@@ -477,7 +477,8 @@ class TestNavTTL:
         router.switch_to_page(page2)
         # Expire the only history entry by backdating its push time.
         nav._ttl_seconds = 60.0
-        nav._history = [(nav._history[0][0], time.monotonic() - 120.0)]
+        handle = nav._history[0][0]
+        nav._history = [(handle, time.monotonic() - 120.0)]
         result = nav.go_back()
         assert result is False
         assert not nav.has_history
