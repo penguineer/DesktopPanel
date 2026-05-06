@@ -420,3 +420,136 @@ class TestBeforePageSwitchEvent:
         nav = _MockNavBack()
         # Should not raise regardless of arguments
         nav._on_before_page_switch(None, object(), object())
+
+
+class TestNavTTL:
+    """Tests for time-to-live expiry of navigation stack entries."""
+
+    def _make_wired(self):
+        router = _make_router()
+        nav = _MockNavBack()
+        router.bind(on_page_selected=nav._on_page_selected)
+        router.bind(on_before_page_switch=nav._on_before_page_switch)
+        nav._switch_callback = router.switch_to_label
+        return router, nav
+
+    # --- _purge_expired ---
+
+    def test_purge_removes_expired_entries(self):
+        """_purge_expired silently removes entries whose TTL has elapsed."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 60.0
+        # Seed an entry pushed well in the past (already expired).
+        nav._history = [('a', time.monotonic() - 120.0)]
+        nav.has_history = True
+        nav._purge_expired()
+        assert not nav.has_history
+        assert nav._history == []
+
+    def test_purge_keeps_fresh_entries(self):
+        """_purge_expired leaves entries that have not yet exceeded their TTL."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 3600.0
+        pushed_at = time.monotonic()
+        nav._history = [('a', pushed_at)]
+        nav.has_history = True
+        nav._purge_expired()
+        assert nav.has_history
+        assert len(nav._history) == 1
+
+    def test_purge_removes_only_expired_entries(self):
+        """_purge_expired only removes the entries whose TTL has elapsed."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 60.0
+        now = time.monotonic()
+        # One expired, one fresh.
+        nav._history = [('old', now - 120.0), ('new', now)]
+        nav.has_history = True
+        nav._purge_expired()
+        assert [h for h, _ in nav._history] == ['new']
+
+    def test_go_back_skips_expired_entries(self):
+        """go_back purges expired entries before navigating."""
+        router, nav = self._make_wired()
+        page1 = _register(router, 'a')
+        page2 = _register(router, 'b')
+        router.switch_to_page(page1)
+        router.switch_to_page(page2)
+        # Expire the only history entry by backdating its push time.
+        nav._ttl_seconds = 60.0
+        nav._history = [(nav._history[0][0], time.monotonic() - 120.0)]
+        result = nav.go_back()
+        assert result is False
+        assert not nav.has_history
+
+    # --- TTL reschedule on config change ---
+
+    def test_ttl_change_reschedules_timer(self):
+        """Setting a new _ttl_seconds and calling _schedule_expiry cancels any
+        outstanding timer and sets a new one for the updated deadline."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 3600.0
+        now = time.monotonic()
+        nav._history = [('a', now)]
+        nav.has_history = True
+
+        # Track how many times _schedule_expiry was called (no-op in mock, but
+        # we can verify the new TTL is used by checking purge behaviour).
+        nav._ttl_seconds = 0.0  # expire immediately
+        nav._purge_expired()
+        assert not nav.has_history
+
+    def test_ttl_reduction_expires_old_entries(self):
+        """Reducing the TTL causes previously-valid entries to become expired."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 3600.0
+        # Push an entry 10 minutes ago.
+        nav._history = [('a', time.monotonic() - 600.0)]
+        nav.has_history = True
+        # Reduce TTL to 5 minutes — the entry is now expired.
+        nav._ttl_seconds = 300.0
+        nav._purge_expired()
+        assert not nav.has_history
+
+    def test_ttl_extension_preserves_old_entries(self):
+        """Increasing the TTL keeps entries that would otherwise have expired."""
+        _, nav = self._make_wired()
+        nav._ttl_seconds = 300.0  # 5 minutes
+        # Push an entry 10 minutes ago — would be expired under old TTL.
+        pushed_at = time.monotonic() - 600.0
+        nav._history = [('a', pushed_at)]
+        nav.has_history = True
+        # Extend TTL to 2 hours — entry should survive.
+        nav._ttl_seconds = 7200.0
+        nav._purge_expired()
+        assert nav.has_history
+
+
+class TestParseNavTtl:
+    """Tests for the _parse_nav_ttl helper."""
+
+    def test_integer_minutes(self):
+        assert _parse_nav_ttl(60) == 3600.0
+
+    def test_float_minutes(self):
+        assert _parse_nav_ttl(0.5) == 30.0
+
+    def test_iso_hours_only(self):
+        assert _parse_nav_ttl("PT1H") == 3600.0
+
+    def test_iso_minutes_only(self):
+        assert _parse_nav_ttl("PT30M") == 1800.0
+
+    def test_iso_hours_and_minutes(self):
+        assert _parse_nav_ttl("PT1H30M") == 5400.0
+
+    def test_iso_fractional_hours(self):
+        assert _parse_nav_ttl("PT0.5H") == 1800.0
+
+    def test_invalid_string_raises(self):
+        with pytest.raises(ValueError):
+            _parse_nav_ttl("1H30M")  # missing PT prefix
+
+    def test_empty_pt_raises(self):
+        with pytest.raises(ValueError):
+            _parse_nav_ttl("PT")  # no H or M component

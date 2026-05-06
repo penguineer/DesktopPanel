@@ -1,5 +1,5 @@
 import re
-import time as _time
+import time
 
 from kivy.clock import Clock
 from kivy.core.window import Window
@@ -450,9 +450,9 @@ class NavBackWidget(Button):
         If the top of the stack already holds the same handle that is being
         pushed, it is popped first so that the handle is always pushed exactly
         once — preventing two consecutive identical entries.
-        Each pushed entry is stamped with an absolute expiry time
-        (``time.monotonic() + _ttl_seconds``) so it can be silently discarded
-        once the user attention window has passed.
+        Each pushed entry records ``time.monotonic()`` as its push timestamp.
+        Expiry is evaluated as ``pushed_at + _ttl_seconds`` at purge time so
+        that a TTL config change applies to all existing entries immediately.
         """
         if self._going_back:
             self._current_handle = handle
@@ -461,8 +461,8 @@ class NavBackWidget(Button):
         if self._current_handle is not None and self._current_handle != handle:
             if self._history and self._history[-1][0] == self._current_handle:
                 self._history.pop()
-            expire_at = _time.monotonic() + self._ttl_seconds
-            self._history.append((self._current_handle, expire_at))
+            pushed_at = time.monotonic()
+            self._history.append((self._current_handle, pushed_at))
             if len(self._history) > self.STACK_MAX_DEPTH:
                 self._history.pop(0)
             self._schedule_expiry()
@@ -478,9 +478,9 @@ class NavBackWidget(Button):
         scheduled expiry timer.  Updates :attr:`has_history` and redraws
         the fill meter if any entries were removed.
         """
-        now = _time.monotonic()
+        now = time.monotonic()
         before = len(self._history)
-        self._history = [(h, e) for h, e in self._history if e > now]
+        self._history = [(h, t) for h, t in self._history if t + self._ttl_seconds > now]
         if len(self._history) != before:
             self.has_history = bool(self._history)
             self._redraw_fill_meter()
@@ -495,8 +495,10 @@ class NavBackWidget(Button):
         """Schedule (or cancel) a single Clock event for the next TTL expiry.
 
         Cancels any previously scheduled event and sets a new one timed for
-        when the oldest remaining stack entry expires.  No event is scheduled
-        when the stack is empty.
+        when the oldest remaining stack entry expires, using the current
+        ``_ttl_seconds``.  No event is scheduled when the stack is empty.
+        Must be called after any change to ``_ttl_seconds`` or ``_history`` so
+        that the pending timer always reflects the current configuration.
         """
         if self._expiry_event is not None:
             self._expiry_event.cancel()
@@ -505,8 +507,8 @@ class NavBackWidget(Button):
         if not self._history:
             return
 
-        now = _time.monotonic()
-        earliest = min(e for _, e in self._history)
+        now = time.monotonic()
+        earliest = min(t + self._ttl_seconds for _, t in self._history)
         delay = max(0.0, earliest - now)
         self._expiry_event = Clock.schedule_once(self._on_expiry_timer, delay)
 
@@ -762,15 +764,26 @@ class GlobalContentArea(AnchorLayout):
         self._apply_nav_conf(conf)
 
     def _apply_nav_conf(self, conf: dict) -> None:
-        """Read ``conf["navigation"]`` and apply settings to the nav-back widget."""
+        """Read ``conf["navigation"]`` and apply settings to the nav-back widget.
+
+        Recognised keys under ``"navigation"``:
+
+        * ``"stack_ttl"`` — time-to-live for history stack entries, given as a
+          number (minutes) or an ISO 8601 duration string (e.g. ``"PT1H"``).
+          Defaults to 1 hour when not set.  When the value changes the expiry
+          timer is rescheduled immediately so that all existing stack entries
+          are evaluated against the new TTL.
+        """
         nav_conf = conf.get("navigation", {}) if conf else {}
-        ttl_value = nav_conf.get("ttl", None)
+        ttl_value = nav_conf.get("stack_ttl", None)
         if ttl_value is not None:
             try:
-                self.ids.nav_back._ttl_seconds = _parse_nav_ttl(ttl_value)
+                nav_back = self.ids.nav_back
+                nav_back._ttl_seconds = _parse_nav_ttl(ttl_value)
+                nav_back._schedule_expiry()
             except ValueError as e:
                 from kivy import Logger
-                Logger.warning("App: Invalid navigation TTL value %r: %s", ttl_value, e)
+                Logger.warning("App: Invalid navigation stack_ttl value %r: %s", ttl_value, e)
 
     def _page_conf(self, page):
         if page and page.conf_lambda:
