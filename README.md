@@ -79,7 +79,7 @@ This may change in future versions.
 ### Known Commands
 
 * `screenshot` Takes a screenshot and stores in the working directory. This command has no arguments.
-* `show page` Toggles to the page given in the `page` argument. In addition, specify `go_back_if_current` to pop the navigation stack if the page is already active.
+* `show page` Toggles to the page given in the `page` argument. In addition, specify `go_back_if_current: True` to pop the navigation stack if the page is already active and `block_input: True` to block user input to avoid clickjacking.
 
 ### Syslog Channel
 
