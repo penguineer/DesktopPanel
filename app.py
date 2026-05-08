@@ -157,11 +157,12 @@ class TabbedPanelApp(App):
     def _schedule_show_page(self, _cmd, args):
         handle = args.get("page", None)
         go_back_if_current = args.get("go_back_if_current", False)
+        block_input = args.get("block_input", False)
         if handle:
             Clock.schedule_once(
                 lambda dt: self.ca.router.switch_to_label(handle,
                                                           go_back_if_current=go_back_if_current,
-                                                          block_input=True))
+                                                          block_input=block_input))
 
     def schedule_update_configuration(self, conf):
         Clock.schedule_once(lambda dt: self.setter('conf')(self, conf))
