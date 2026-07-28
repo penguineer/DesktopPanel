@@ -121,34 +121,32 @@ class TestComputeBarValues:
 
 class TestBuildPowerFluxQuery:
     def test_basic_query_structure(self):
-        q = build_power_flux_query("mybucket", "myfield", 10, 300, 2)
+        q = build_power_flux_query("mybucket", "myfield", 10, 300, 2, "myms")
         lines = q.splitlines()
         assert lines[0] == 'from(bucket: "mybucket")'
         assert lines[1] == '  |> range(start: -3600s)'  # (10+2)*300 = 3600
-        assert lines[2] == '  |> filter(fn: (r) => r._field == "myfield")'
+        assert lines[2] == '  |> filter(fn: (r) => r._measurement == "myms")'
+        assert lines[3] == '  |> filter(fn: (r) => r._field == "myfield")'
         assert lines[-1] == '  |> sort(columns: ["_time"])'
-        assert 'r._measurement' not in q
 
-    def test_with_measurement_filter(self):
+    def test_measurement_before_field_filter(self):
+        # Measurement filter must precede field filter (bucket→measurement→field order)
         q = build_power_flux_query("mybucket", "myfield", 10, 300, 2, "myms")
-        assert '  |> filter(fn: (r) => r._measurement == "myms")' in q
         lines = q.splitlines()
-        assert lines[-1] == '  |> sort(columns: ["_time"])'
-
-    def test_without_measurement_no_measurement_line(self):
-        q = build_power_flux_query("mybucket", "myfield", 10, 300, 2, None)
-        assert 'r._measurement' not in q
+        ms_idx = next(i for i, l in enumerate(lines) if 'r._measurement' in l)
+        field_idx = next(i for i, l in enumerate(lines) if 'r._field' in l)
+        assert ms_idx < field_idx
 
     def test_string_bar_duration_produces_correct_range(self):
         # bar_duration configured as a JSON string ("300") must not cause
         # Python string multiplication that inflates the range value.
-        q = build_power_flux_query("mybucket", "myfield", 10, "300", 2)
+        q = build_power_flux_query("mybucket", "myfield", 10, "300", 2, "myms")
         assert '  |> range(start: -3600s)' in q
 
     def test_buffer_adds_to_range(self):
         # n_buffer extra bars are included in the time range query
-        q_no_buf = build_power_flux_query("b", "f", 10, 60, 0)
-        q_buf = build_power_flux_query("b", "f", 10, 60, 2)
+        q_no_buf = build_power_flux_query("b", "f", 10, 60, 0, "myms")
+        q_buf = build_power_flux_query("b", "f", 10, 60, 2, "myms")
         assert '|> range(start: -600s)' in q_no_buf   # 10*60
         assert '|> range(start: -720s)' in q_buf      # 12*60
 

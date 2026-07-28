@@ -158,7 +158,7 @@ class PowerWidget(RelativeLayout):
 
 
 def build_power_flux_query(bucket, field, n_bars, bar_duration, n_buffer,
-                           measurement=None):
+                           measurement):
     """Build the Flux query string for power history data.
 
     :param bucket: InfluxDB bucket name.
@@ -166,19 +166,17 @@ def build_power_flux_query(bucket, field, n_bars, bar_duration, n_buffer,
     :param n_bars: Number of bars to cover.
     :param bar_duration: Duration of each bar in seconds (int or numeric string).
     :param n_buffer: Extra bars to fetch beyond *n_bars* for boundary accuracy.
-    :param measurement: Optional InfluxDB measurement filter.
+    :param measurement: InfluxDB measurement name.
     :return: Flux query string.
     """
     time_range = (n_bars + n_buffer) * int(bar_duration)
     lines = [
         f'from(bucket: "{bucket}")',
         f'  |> range(start: -{time_range}s)',
+        f'  |> filter(fn: (r) => r._measurement == "{measurement}")',
         f'  |> filter(fn: (r) => r._field == "{field}")',
+        f'  |> sort(columns: ["_time"])',
     ]
-    if measurement:
-        lines.append(
-            f'  |> filter(fn: (r) => r._measurement == "{measurement}")')
-    lines.append('  |> sort(columns: ["_time"])')
     return '\n'.join(lines)
 
 
@@ -194,10 +192,10 @@ class PowerHistoryGraph(RelativeLayout):
 
     ``bucket``
         InfluxDB bucket name (required).
+    ``measurement``
+        InfluxDB measurement name (required).
     ``field``
         InfluxDB field name holding cumulative energy in Joules (required).
-    ``measurement``
-        Optional InfluxDB measurement filter.
     ``bar_duration``
         Seconds covered by each bar (default 300 = 5 min).
     ``update_interval``
@@ -272,9 +270,10 @@ class PowerHistoryGraph(RelativeLayout):
             return
 
         bucket = self.conf.get("bucket", None)
+        measurement = self.conf.get("measurement", None)
         field = self.conf.get("field", None)
-        if not bucket or not field:
-            Logger.warning("PowerGraph: 'bucket' and 'field' must be configured")
+        if not bucket or not measurement or not field:
+            Logger.warning("PowerGraph: 'bucket', 'measurement' and 'field' must be configured")
             return
 
         n = self._n_bars()
@@ -282,7 +281,6 @@ class PowerHistoryGraph(RelativeLayout):
             return
 
         bar_duration = int(self.conf.get("bar_duration", 300))
-        measurement = self.conf.get("measurement", None)
         flux_query = build_power_flux_query(
             bucket, field, n, bar_duration, self._QUERY_BUFFER_BARS, measurement)
 
