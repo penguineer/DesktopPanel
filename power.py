@@ -313,8 +313,14 @@ class PowerHistoryGraph(RelativeLayout):
     def _on_query_error(self, e):
         Logger.error("PowerGraph: InfluxDB query error: %s", str(e))
 
+    _CANVAS_GROUP = 'phg_frame'
+
     def _redraw(self, *args):
-        self.canvas.before.clear()
+        # Use remove_group instead of canvas.before.clear() to avoid removing
+        # the PushMatrix/Translate instructions that RelativeLayout places in
+        # canvas.before (clearing those while PopMatrix remains in canvas.after
+        # causes an unbalanced RenderContext pop_state → IndexError).
+        self.canvas.before.remove_group(self._CANVAS_GROUP)
 
         w = self.width
         h = self.height
@@ -324,11 +330,13 @@ class PowerHistoryGraph(RelativeLayout):
         with self.canvas.before:
             # Structural frame lines in grey
             b = self.FRAME_BORDER
-            Color(*Colors.COLOR_GREY)
-            Line(points=[0, 0, w - b, 0], width=b)
-            Line(points=[0, h - b, w - b, h - b], width=b)
-            Line(points=[0, 0, 0, h - b], width=b)
-            Line(points=[w - b, 0, w - b, h - b], width=b)
+            Color(*Colors.COLOR_GREY, group=self._CANVAS_GROUP)
+            Line(points=[0, 0, w - b, 0], width=b, group=self._CANVAS_GROUP)
+            Line(points=[0, h - b, w - b, h - b], width=b,
+                 group=self._CANVAS_GROUP)
+            Line(points=[0, 0, 0, h - b], width=b, group=self._CANVAS_GROUP)
+            Line(points=[w - b, 0, w - b, h - b], width=b,
+                 group=self._CANVAS_GROUP)
 
             if self._bars:
                 n = len(self._bars)
@@ -338,11 +346,12 @@ class PowerHistoryGraph(RelativeLayout):
                            if available > total_bars and n > 0
                            else 1.0)
 
-                Color(*Colors.COLOR_YELLOW)
+                Color(*Colors.COLOR_YELLOW, group=self._CANVAS_GROUP)
                 for i, normalized in enumerate(self._bars):
                     x = spacing * (i + 1) + self.BAR_WIDTH * i
                     bar_h = max(b, normalized * (h - 2 * b))
-                    Rectangle(pos=(x, b), size=(self.BAR_WIDTH, bar_h))
+                    Rectangle(pos=(x, b), size=(self.BAR_WIDTH, bar_h),
+                               group=self._CANVAS_GROUP)
 
     def _update_max_label(self, *args):
         if self._max_label is None:
