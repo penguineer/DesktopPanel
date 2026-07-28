@@ -32,7 +32,7 @@ Builder.load_string("""
 
         AnchorLayout:
             anchor_x: 'right'
-            anchor_y: 'bottom'
+            anchor_y: 'top'
             size_hint_x: 0.5  # complement of syslog panel width above
             padding: [0, 0, 10, 0]
 

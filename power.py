@@ -157,6 +157,31 @@ class PowerWidget(RelativeLayout):
             self.power = None
 
 
+def build_power_flux_query(bucket, field, n_bars, bar_duration, n_buffer,
+                           measurement=None):
+    """Build the Flux query string for power history data.
+
+    :param bucket: InfluxDB bucket name.
+    :param field: InfluxDB field name holding cumulative energy values.
+    :param n_bars: Number of bars to cover.
+    :param bar_duration: Duration of each bar in seconds (int or numeric string).
+    :param n_buffer: Extra bars to fetch beyond *n_bars* for boundary accuracy.
+    :param measurement: Optional InfluxDB measurement filter.
+    :return: Flux query string.
+    """
+    time_range = (n_bars + n_buffer) * int(bar_duration)
+    lines = [
+        f'from(bucket: "{bucket}")',
+        f'  |> range(start: -{time_range}s)',
+        f'  |> filter(fn: (r) => r._field == "{field}")',
+    ]
+    if measurement:
+        lines.append(
+            f'  |> filter(fn: (r) => r._measurement == "{measurement}")')
+    lines.append('  |> sort(columns: ["_time"])')
+    return '\n'.join(lines)
+
+
 class PowerHistoryGraph(RelativeLayout):
     """Bar chart showing power consumption history from InfluxDB.
 
@@ -224,7 +249,7 @@ class PowerHistoryGraph(RelativeLayout):
         self._position_max_label()
 
     def _start_updates(self):
-        interval = self.conf.get("update_interval", 60)
+        interval = int(self.conf.get("update_interval", 60))
         self._query_influx()
         self._update_event = Clock.schedule_interval(
             lambda dt: self._query_influx(), interval)
@@ -256,22 +281,13 @@ class PowerHistoryGraph(RelativeLayout):
         if n <= 0:
             return
 
-        bar_duration = self.conf.get("bar_duration", 300)
+        bar_duration = int(self.conf.get("bar_duration", 300))
         measurement = self.conf.get("measurement", None)
-        time_range = int((n + self._QUERY_BUFFER_BARS) * bar_duration)
-
-        lines = [
-            f'from(bucket: "{bucket}")',
-            f'  |> range(start: -{time_range}s)',
-            f'  |> filter(fn: (r) => r._field == "{field}")',
-        ]
-        if measurement:
-            lines.append(
-                f'  |> filter(fn: (r) => r._measurement == "{measurement}")')
-        lines.append('  |> sort(columns: ["_time"])')
+        flux_query = build_power_flux_query(
+            bucket, field, n, bar_duration, self._QUERY_BUFFER_BARS, measurement)
 
         self.influxdb_widget.query(
-            '\n'.join(lines), self._on_data, self._on_query_error)
+            flux_query, self._on_data, self._on_query_error)
 
     def _on_data(self, tables):
         points = []
@@ -296,7 +312,7 @@ class PowerHistoryGraph(RelativeLayout):
             return
 
         n = self._n_bars()
-        bar_duration = self.conf.get("bar_duration", 300) if self.conf else 300
+        bar_duration = int(self.conf.get("bar_duration", 300)) if self.conf else 300
         now = _time.time()
 
         bar_watts = compute_bar_values(segments, n, bar_duration, now)

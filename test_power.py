@@ -2,7 +2,7 @@
 
 import pytest
 
-from power import compute_energy_segments, compute_bar_values
+from power import compute_energy_segments, compute_bar_values, build_power_flux_query
 
 
 class TestComputeEnergySegments:
@@ -117,3 +117,38 @@ class TestComputeBarValues:
         segments = [(now - 10, now, 100)]
         bars = compute_bar_values(segments, n_bars=1, bar_duration=10, now=now)
         assert abs(bars[0] - 10.0) < 1e-9
+
+
+class TestBuildPowerFluxQuery:
+    def test_basic_query_structure(self):
+        q = build_power_flux_query("mybucket", "myfield", 10, 300, 2)
+        lines = q.splitlines()
+        assert lines[0] == 'from(bucket: "mybucket")'
+        assert lines[1] == '  |> range(start: -3600s)'  # (10+2)*300 = 3600
+        assert lines[2] == '  |> filter(fn: (r) => r._field == "myfield")'
+        assert lines[-1] == '  |> sort(columns: ["_time"])'
+        assert 'r._measurement' not in q
+
+    def test_with_measurement_filter(self):
+        q = build_power_flux_query("mybucket", "myfield", 10, 300, 2, "myms")
+        assert '  |> filter(fn: (r) => r._measurement == "myms")' in q
+        lines = q.splitlines()
+        assert lines[-1] == '  |> sort(columns: ["_time"])'
+
+    def test_without_measurement_no_measurement_line(self):
+        q = build_power_flux_query("mybucket", "myfield", 10, 300, 2, None)
+        assert 'r._measurement' not in q
+
+    def test_string_bar_duration_produces_correct_range(self):
+        # bar_duration configured as a JSON string ("300") must not cause
+        # Python string multiplication that inflates the range value.
+        q = build_power_flux_query("mybucket", "myfield", 10, "300", 2)
+        assert '  |> range(start: -3600s)' in q
+
+    def test_buffer_adds_to_range(self):
+        # n_buffer extra bars are included in the time range query
+        q_no_buf = build_power_flux_query("b", "f", 10, 60, 0)
+        q_buf = build_power_flux_query("b", "f", 10, 60, 2)
+        assert '|> range(start: -600s)' in q_no_buf   # 10*60
+        assert '|> range(start: -720s)' in q_buf      # 12*60
+
