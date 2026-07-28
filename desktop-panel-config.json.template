@@ -17,6 +17,12 @@
     "declare": "true | false",
     "command_channel": "<AMQP command channel>"
   },
+  "influxdb": {
+    "url": "<InfluxDB URL, e.g. http://localhost:8086>",
+    "token": "<InfluxDB authentication token>",
+    "org": "<InfluxDB organization>",
+    "bucket": "<default bucket (optional)>"
+  },
   "presence": {
     "svc": "<service url>",
     "self": "<your own handle>",
