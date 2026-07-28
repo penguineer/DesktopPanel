@@ -100,7 +100,7 @@ Builder.load_string("""
         size_hint: None, None
         size: self.texture_size
         x: root.width / 2 - (self.width + _unit_label.width + 2) / 2
-        center_y: root.height / 2
+        y: 0
         color: Colors.COLOR_RED if root.value_error else \
                Colors.COLOR_GREY if root.power is None else \
                Colors.COLOR_WHITE
