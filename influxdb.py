@@ -158,7 +158,7 @@ class InfluxDbConnector(object):
 
 Builder.load_string("""
 <InfluxDbWidget>:
-    label: 'InfluxDB'
+    label: 'Influx'
     icon: 'assets/influxdb_icon_64px.png'
 """)
 
