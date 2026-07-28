@@ -157,16 +157,16 @@ class PowerWidget(RelativeLayout):
             self.power = None
 
 
-def build_power_flux_query(bucket, field, n_bars, bar_duration, n_buffer,
-                           measurement):
+def build_power_flux_query(bucket, measurement, field, n_bars, bar_duration,
+                           n_buffer):
     """Build the Flux query string for power history data.
 
     :param bucket: InfluxDB bucket name.
+    :param measurement: InfluxDB measurement name.
     :param field: InfluxDB field name holding cumulative energy values.
     :param n_bars: Number of bars to cover.
     :param bar_duration: Duration of each bar in seconds (int or numeric string).
     :param n_buffer: Extra bars to fetch beyond *n_bars* for boundary accuracy.
-    :param measurement: InfluxDB measurement name.
     :return: Flux query string.
     """
     time_range = (n_bars + n_buffer) * int(bar_duration)
@@ -245,12 +245,20 @@ class PowerHistoryGraph(RelativeLayout):
     def _on_size(self, *args):
         self._redraw()
         self._position_max_label()
+        # Trigger the initial query once the widget has valid dimensions.
+        # This handles the case where _start_updates fired before layout
+        # assigned a non-zero width.
+        if self._update_event is not None and not self._bars and self._n_bars() > 0:
+            self._query_influx()
 
     def _start_updates(self):
         interval = int(self.conf.get("update_interval", 60))
-        self._query_influx()
         self._update_event = Clock.schedule_interval(
             lambda dt: self._query_influx(), interval)
+        # Only fire immediately if the widget already has a valid width;
+        # otherwise _on_size will trigger the first query once layout is done.
+        if self._n_bars() > 0:
+            self._query_influx()
 
     def _stop_updates(self):
         if self._update_event is not None:
@@ -282,7 +290,7 @@ class PowerHistoryGraph(RelativeLayout):
 
         bar_duration = int(self.conf.get("bar_duration", 300))
         flux_query = build_power_flux_query(
-            bucket, field, n, bar_duration, self._QUERY_BUFFER_BARS, measurement)
+            bucket, measurement, field, n, bar_duration, self._QUERY_BUFFER_BARS)
 
         self.influxdb_widget.query(
             flux_query, self._on_data, self._on_query_error)
@@ -362,7 +370,7 @@ class PowerHistoryGraph(RelativeLayout):
 
                 Color(*Colors.COLOR_YELLOW, group=self._CANVAS_GROUP)
                 for i, normalized in enumerate(self._bars):
-                    x = spacing * (i + 1) + self.BAR_WIDTH * i
+                    x = b + spacing * (i + 1) + self.BAR_WIDTH * i
                     bar_h = max(b, normalized * (h - 2 * b))
                     Rectangle(pos=(x, b), size=(self.BAR_WIDTH, bar_h),
                                group=self._CANVAS_GROUP)
