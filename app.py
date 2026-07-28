@@ -11,6 +11,7 @@ import json
 
 import amqp
 import mqtt
+import influxdb
 import globalcontent
 from page_gtd import GtdPage
 from page_home import HomePage
@@ -55,6 +56,7 @@ class TabbedPanelApp(App):
         self.ca = None
         self.config_obs = None
         self.amqp_widget = None
+        self.influxdb_widget = None
         self.presence_tray = None
 
         self.bind(conf_path=self._on_conf_path)
@@ -89,6 +91,8 @@ class TabbedPanelApp(App):
             self.mqttc.conf = conf.get("mqtt", None)
         if self.amqp_widget:
             self.amqp_widget.conf = conf.get("amqp", None) if conf else None
+        if self.influxdb_widget:
+            self.influxdb_widget.conf = conf.get("influxdb", None) if conf else None
 
     def _on_mqttc(self, _instance, mqttc) -> None:
         if self.ca:
@@ -118,6 +122,10 @@ class TabbedPanelApp(App):
         self.amqp_widget.add_command_handler("screenshot", command_screenshot)
         self.amqp_widget.add_command_handler("show page", self._schedule_show_page)
         ca.register_tray_item(self.amqp_widget)
+
+        self.influxdb_widget = influxdb.InfluxDbWidget()
+        self.influxdb_widget.conf = self.conf.get("influxdb", None) if self.conf else None
+        ca.register_tray_item(self.influxdb_widget)
 
         system_page.amqp_widget = self.amqp_widget
 
@@ -150,6 +158,8 @@ class TabbedPanelApp(App):
             self.config_obs.teardown()
         if self.amqp_widget is not None:
             self.amqp_widget.teardown()
+        if self.influxdb_widget is not None:
+            self.influxdb_widget.teardown()
 
     def select(self, index):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
