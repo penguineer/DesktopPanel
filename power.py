@@ -89,8 +89,8 @@ Builder.load_string("""
 
 <PowerWidget>:
     size_hint: None, None
-    height: 40
-    width: 110  # default; overridden by parent layout when temperatures are configured
+    height: 50
+    width: 110
 
     Label:
         id: _num_label
@@ -224,10 +224,10 @@ class PowerHistoryGraph(RelativeLayout):
             font_name='assets/FiraMono-Regular.ttf',
             color=Colors.COLOR_GREY,
             size_hint=(None, None),
-            size=(60, 18),
+            size=(75, 18),
             halign='left',
             valign='top',
-            text_size=(60, 18),
+            text_size=(75, 18),
         )
         self.add_widget(self._max_label)
 
@@ -267,8 +267,8 @@ class PowerHistoryGraph(RelativeLayout):
 
     def _n_bars(self):
         """Return how many bars fit in the current widget width."""
-        # Reserve one pixel on each side for the frame border
-        available = max(0, int(self.width) - 2 * self.FRAME_BORDER)
+        # Reserve one pixel on the left for the axis border only
+        available = max(0, int(self.width) - self.FRAME_BORDER)
         if available <= 0:
             return 0
         return max(0, available // (self.BAR_WIDTH + 1))
@@ -350,28 +350,25 @@ class PowerHistoryGraph(RelativeLayout):
             return
 
         with self.canvas.before:
-            # Structural frame lines in grey
+            # Axis lines: bottom baseline and left y-axis only
             b = self.FRAME_BORDER
             Color(*Colors.COLOR_GREY, group=self._CANVAS_GROUP)
-            Line(points=[0, 0, w - b, 0], width=b, group=self._CANVAS_GROUP)
-            Line(points=[0, h - b, w - b, h - b], width=b,
-                 group=self._CANVAS_GROUP)
-            Line(points=[0, 0, 0, h - b], width=b, group=self._CANVAS_GROUP)
-            Line(points=[w - b, 0, w - b, h - b], width=b,
-                 group=self._CANVAS_GROUP)
+            Line(points=[0, 0, w, 0], width=b, group=self._CANVAS_GROUP)
+            Line(points=[0, 0, 0, h], width=b, group=self._CANVAS_GROUP)
 
             if self._bars:
                 n = len(self._bars)
-                available = w - 2 * b
+                available = w - b  # full width minus left border only
                 total_bars = n * self.BAR_WIDTH
-                spacing = ((available - total_bars) / (n + 1)
+                # n gaps (one before each bar); last bar reaches the right edge
+                spacing = ((available - total_bars) / n
                            if available > total_bars and n > 0
                            else 1.0)
 
                 Color(*Colors.COLOR_YELLOW, group=self._CANVAS_GROUP)
                 for i, normalized in enumerate(self._bars):
                     x = b + spacing * (i + 1) + self.BAR_WIDTH * i
-                    bar_h = max(b, normalized * (h - 2 * b))
+                    bar_h = max(b, normalized * (h - b))
                     Rectangle(pos=(x, b), size=(self.BAR_WIDTH, bar_h),
                                group=self._CANVAS_GROUP)
 
@@ -379,7 +376,7 @@ class PowerHistoryGraph(RelativeLayout):
         if self._max_label is None:
             return
         if self._max_value is not None:
-            self._max_label.text = f"{self._max_value:.0f}"
+            self._max_label.text = f"{self._max_value:.0f} W"
         else:
             self._max_label.text = ''
         self._position_max_label()

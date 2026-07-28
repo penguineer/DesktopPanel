@@ -42,7 +42,7 @@ Builder.load_string("""
                 spacing: 10
                 size_hint_x: 1
                 size_hint_y: None
-                height: 40
+                height: 50
 
                 PowerHistoryGraph:
                     conf: root.conf.get("power", {}).get("graph", {}) if root.conf else {}
@@ -50,8 +50,6 @@ Builder.load_string("""
 
                 PowerWidget:
                     id: power
-                    size_hint_x: None
-                    width: max(temperatures.width, 110)
                     conf: root.conf.get("power", {}) if root.conf else {}
                     mqttc: root.mqttc
 
