@@ -8,6 +8,7 @@ import globalcontent
 Builder.load_string("""
 #:import TemperaturePanel temperature.TemperaturePanel
 #:import PowerWidget power.PowerWidget
+#:import PowerHistoryGraph power.PowerHistoryGraph
 #:import SyslogMessagePanel syslog_messages.SyslogMessagePanel
 
 <SystemPage>:
@@ -38,24 +39,46 @@ Builder.load_string("""
             BoxLayout:
                 orientation: 'vertical'
                 spacing: 10
-                size_hint: None, None
-                width: temperatures.width
-                height: temperatures.height + power.height + 10
+                size_hint_x: 1
+                size_hint_y: None
+                height: 40 + 10 + temperatures.height
 
-                PowerWidget:
-                    id: power
-                    conf: root.conf.get("power", {}) if root.conf else {}
-                    mqttc: root.mqttc
+                # Power row: history graph on the left, live reading on the right
+                BoxLayout:
+                    orientation: 'horizontal'
+                    spacing: 10
+                    size_hint_x: 1
+                    size_hint_y: None
+                    height: 40
 
-                TemperaturePanel:
-                    id: temperatures
-                    conf: root.conf.get("temperatures", {}) if root.conf else {}
-                    mqttc: root.mqttc
+                    PowerHistoryGraph:
+                        conf: root.conf.get("power", {}).get("graph", {}) if root.conf else {}
+                        influxdb_widget: root.influxdb_widget
+
+                    PowerWidget:
+                        id: power
+                        size_hint_x: None
+                        width: max(temperatures.width, 110)
+                        conf: root.conf.get("power", {}) if root.conf else {}
+                        mqttc: root.mqttc
+
+                # Temperature panel – right-aligned below the power row
+                AnchorLayout:
+                    anchor_x: 'right'
+                    size_hint_x: 1
+                    size_hint_y: None
+                    height: temperatures.height
+
+                    TemperaturePanel:
+                        id: temperatures
+                        conf: root.conf.get("temperatures", {}) if root.conf else {}
+                        mqttc: root.mqttc
 """)
 
 
 class SystemPage(globalcontent.ContentPage):
     amqp_widget = ObjectProperty(None, allownone=True)
+    influxdb_widget = ObjectProperty(None, allownone=True)
 
     def on_syslog_message(self, msg):
         """Update the tab notification badge when a new syslog message arrives."""
