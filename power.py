@@ -90,6 +90,7 @@ Builder.load_string("""
 <PowerWidget>:
     size_hint: None, None
     height: 40
+    width: 110  # default; overridden by parent layout when temperatures are configured
 
     Label:
         id: _num_label
@@ -178,7 +179,10 @@ class PowerHistoryGraph(RelativeLayout):
         Query/redraw interval in seconds (default 60).
     """
 
-    BAR_WIDTH = 5  # px per bar
+    BAR_WIDTH = 5           # px per bar
+    FRAME_BORDER = 1        # px width of structural frame lines
+    # Extra bar slots fetched beyond n_bars to cover boundary conditions
+    _QUERY_BUFFER_BARS = 2
 
     conf = DictProperty(None, allownone=True)
     influxdb_widget = ObjectProperty(None, allownone=True)
@@ -232,7 +236,8 @@ class PowerHistoryGraph(RelativeLayout):
 
     def _n_bars(self):
         """Return how many bars fit in the current widget width."""
-        available = max(0, int(self.width) - 2)  # reserve 1 px on each side
+        # Reserve one pixel on each side for the frame border
+        available = max(0, int(self.width) - 2 * self.FRAME_BORDER)
         if available <= 0:
             return 0
         return max(0, available // (self.BAR_WIDTH + 1))
@@ -253,7 +258,7 @@ class PowerHistoryGraph(RelativeLayout):
 
         bar_duration = self.conf.get("bar_duration", 300)
         measurement = self.conf.get("measurement", None)
-        time_range = int((n + 2) * bar_duration)
+        time_range = int((n + self._QUERY_BUFFER_BARS) * bar_duration)
 
         lines = [
             f'from(bucket: "{bucket}")',
@@ -318,15 +323,16 @@ class PowerHistoryGraph(RelativeLayout):
 
         with self.canvas.before:
             # Structural frame lines in grey
+            b = self.FRAME_BORDER
             Color(*Colors.COLOR_GREY)
-            Line(points=[0, 0, w - 1, 0], width=1)
-            Line(points=[0, h - 1, w - 1, h - 1], width=1)
-            Line(points=[0, 0, 0, h - 1], width=1)
-            Line(points=[w - 1, 0, w - 1, h - 1], width=1)
+            Line(points=[0, 0, w - b, 0], width=b)
+            Line(points=[0, h - b, w - b, h - b], width=b)
+            Line(points=[0, 0, 0, h - b], width=b)
+            Line(points=[w - b, 0, w - b, h - b], width=b)
 
             if self._bars:
                 n = len(self._bars)
-                available = w - 2
+                available = w - 2 * b
                 total_bars = n * self.BAR_WIDTH
                 spacing = ((available - total_bars) / (n + 1)
                            if available > total_bars and n > 0
@@ -335,8 +341,8 @@ class PowerHistoryGraph(RelativeLayout):
                 Color(*Colors.COLOR_YELLOW)
                 for i, normalized in enumerate(self._bars):
                     x = spacing * (i + 1) + self.BAR_WIDTH * i
-                    bar_h = max(1, normalized * (h - 2))
-                    Rectangle(pos=(x, 1), size=(self.BAR_WIDTH, bar_h))
+                    bar_h = max(b, normalized * (h - 2 * b))
+                    Rectangle(pos=(x, b), size=(self.BAR_WIDTH, bar_h))
 
     def _update_max_label(self, *args):
         if self._max_label is None:
@@ -350,4 +356,6 @@ class PowerHistoryGraph(RelativeLayout):
     def _position_max_label(self, *args):
         if self._max_label is None:
             return
-        self._max_label.pos = (4, self.height - self._max_label.height - 2)
+        self._max_label.pos = (
+            4,
+            self.height - self._max_label.height - self.FRAME_BORDER - 1)
