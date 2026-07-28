@@ -113,7 +113,7 @@ Builder.load_string("""
         size_hint: None, None
         size: self.texture_size
         x: _num_label.right + 2
-        top: _num_label.top
+        y: _num_label.y + 0.9 * (_num_label.height - _unit_label.height)
         color: Colors.COLOR_RED if root.value_error else \
                Colors.COLOR_GREY if root.power is None else \
                Colors.COLOR_WHITE
@@ -222,7 +222,7 @@ class PowerHistoryGraph(RelativeLayout):
             text='',
             font_size=14,
             font_name='assets/FiraMono-Regular.ttf',
-            color=Colors.COLOR_GREY,
+            color=Colors.COLOR_WHITE,
             size_hint=(None, None),
             size=(75, 18),
             halign='left',
