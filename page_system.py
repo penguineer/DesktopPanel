@@ -8,6 +8,7 @@ import globalcontent
 Builder.load_string("""
 #:import TemperaturePanel temperature.TemperaturePanel
 #:import PowerWidget power.PowerWidget
+#:import PowerHistoryGraph power.PowerHistoryGraph
 #:import SyslogMessagePanel syslog_messages.SyslogMessagePanel
 
 <SystemPage>:
@@ -29,23 +30,39 @@ Builder.load_string("""
             max_entries: root.conf.get('syslog_max_entries', 50) if root.conf else 50
             message_callback: root.on_syslog_message
 
-        AnchorLayout:
-            anchor_x: 'right'
-            anchor_y: 'bottom'
+        BoxLayout:
+            orientation: 'vertical'
             size_hint_x: 0.5  # complement of syslog panel width above
-            padding: [0, 0, 10, 0]
+            padding: [0, 12, 10, 0]
+            spacing: 10
 
+            # Power row: history graph on the left, live reading on the right
             BoxLayout:
-                orientation: 'vertical'
+                orientation: 'horizontal'
                 spacing: 10
-                size_hint: None, None
-                width: temperatures.width
-                height: temperatures.height + power.height + 10
+                size_hint_x: 1
+                size_hint_y: None
+                height: 32
+
+                PowerHistoryGraph:
+                    conf: root.conf.get("power", {}).get("graph", {}) if root.conf else {}
+                    influxdb_widget: root.influxdb_widget
 
                 PowerWidget:
                     id: power
                     conf: root.conf.get("power", {}) if root.conf else {}
                     mqttc: root.mqttc
+
+            # Spacer pushes the temperature panel to the bottom of the column
+            Widget:
+                size_hint_y: 1
+
+            # Temperature panel – right-aligned at the bottom of the column
+            AnchorLayout:
+                anchor_x: 'right'
+                size_hint_x: 1
+                size_hint_y: None
+                height: temperatures.height
 
                 TemperaturePanel:
                     id: temperatures
@@ -56,6 +73,7 @@ Builder.load_string("""
 
 class SystemPage(globalcontent.ContentPage):
     amqp_widget = ObjectProperty(None, allownone=True)
+    influxdb_widget = ObjectProperty(None, allownone=True)
 
     def on_syslog_message(self, msg):
         """Update the tab notification badge when a new syslog message arrives."""

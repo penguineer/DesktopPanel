@@ -128,6 +128,7 @@ class TabbedPanelApp(App):
         ca.register_tray_item(self.influxdb_widget)
 
         system_page.amqp_widget = self.amqp_widget
+        system_page.influxdb_widget = self.influxdb_widget
 
         ca.register_status_item(DateTimeDisplay())
 
