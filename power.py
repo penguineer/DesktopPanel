@@ -22,14 +22,14 @@ class Colors:
 
 
 def compute_energy_segments(points):
-    """Convert sorted (timestamp, cumulative_energy_joules) pairs to energy segments.
+    """Convert sorted (timestamp, cumulative_energy_wmin) pairs to energy segments.
 
-    Returns a list of (t_start, t_end, energy_joules) tuples representing the
+    Returns a list of (t_start, t_end, energy_wmin) tuples representing the
     energy consumed in each interval.  Intervals where the cumulative energy
     value decreases (wrap-around or device reset) are skipped.
 
-    :param points: Sorted list of (unix_timestamp, cumulative_joules) pairs.
-    :return: List of (t_start, t_end, delta_joules) tuples.
+    :param points: Sorted list of (unix_timestamp, cumulative_wmin) pairs.
+    :return: List of (t_start, t_end, delta_wmin) tuples.
     """
     segments = []
     for i in range(1, len(points)):
@@ -49,13 +49,15 @@ def compute_energy_segments(points):
 def compute_bar_values(segments, n_bars, bar_duration, now=None):
     """Distribute energy segments into fixed-width time bars.
 
-    Each bar covers *bar_duration* seconds.  The returned value is the average
-    power in watts for the bar's time window, which equals watt-hours-per-hour
-    (Wh/h) – i.e. the consumption rate if the bar's interval were an hour long.
+    Each bar covers *bar_duration* seconds.  The energy values from the Shelly
+    Plug are cumulative watt-minutes (Wmin).  The returned value is the average
+    power in watts for the bar's time window:
+
+        watts = watt_minutes_in_bar * 60 / bar_duration_seconds
 
     bars[0] is the oldest (leftmost), bars[n_bars-1] is the newest (rightmost).
 
-    :param segments: List of (t_start, t_end, delta_joules) from
+    :param segments: List of (t_start, t_end, delta_wmin) from
         :func:`compute_energy_segments`.
     :param n_bars: Number of bars to compute.
     :param bar_duration: Duration covered by each bar in seconds.
@@ -79,7 +81,7 @@ def compute_bar_values(segments, n_bars, bar_duration, now=None):
                 overlap_dur = overlap_end - overlap_start
                 energy += seg_energy * (overlap_dur / seg_dur)
 
-        bars.append(energy / bar_duration)
+        bars.append(energy * 60 / bar_duration)
 
     return bars
 
