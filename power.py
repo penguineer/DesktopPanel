@@ -186,9 +186,9 @@ class PowerHistoryGraph(RelativeLayout):
     """Bar chart showing power consumption history from InfluxDB.
 
     Bars are drawn oldest-left / newest-right.  Each bar represents the
-    average power (watts = Wh/h) over a configurable time window
-    (*bar_duration* seconds).  The widget queries InfluxDB periodically and
-    redraws via canvas instructions.
+    average power (watts = watt_minutes * 60 / bar_duration_seconds) over a
+    configurable time window (*bar_duration* seconds).  The widget queries
+    InfluxDB periodically and redraws via canvas instructions.
 
     Configuration keys (``conf`` dict):
 
@@ -197,7 +197,7 @@ class PowerHistoryGraph(RelativeLayout):
     ``measurement``
         InfluxDB measurement name (required).
     ``field``
-        InfluxDB field name holding cumulative energy in Joules (required).
+        InfluxDB field name holding cumulative energy in watt-minutes (Wmin) (required).
     ``bar_duration``
         Seconds covered by each bar (default 300 = 5 min).
     ``update_interval``
