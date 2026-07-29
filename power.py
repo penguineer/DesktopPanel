@@ -204,7 +204,7 @@ class PowerHistoryGraph(RelativeLayout):
         Query/redraw interval in seconds (default 60).
     """
 
-    BAR_WIDTH = 5           # px per bar
+    BAR_WIDTH = 8           # px per bar
     FRAME_BORDER = 1        # px width of structural frame lines
     # Extra bar slots fetched beyond n_bars to cover boundary conditions
     _QUERY_BUFFER_BARS = 2
@@ -222,7 +222,7 @@ class PowerHistoryGraph(RelativeLayout):
 
         self._max_label = Label(
             text='',
-            font_size=14,
+            font_size=12,
             font_name='assets/FiraMono-Regular.ttf',
             color=Colors.COLOR_WHITE,
             size_hint=(None, None),

@@ -33,7 +33,7 @@ Builder.load_string("""
         BoxLayout:
             orientation: 'vertical'
             size_hint_x: 0.5  # complement of syslog panel width above
-            padding: [0, 10, 10, 0]
+            padding: [0, 12, 10, 0]
             spacing: 10
 
             # Power row: history graph on the left, live reading on the right
@@ -42,7 +42,7 @@ Builder.load_string("""
                 spacing: 10
                 size_hint_x: 1
                 size_hint_y: None
-                height: 50
+                height: 32
 
                 PowerHistoryGraph:
                     conf: root.conf.get("power", {}).get("graph", {}) if root.conf else {}
