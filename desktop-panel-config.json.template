@@ -59,8 +59,8 @@
         "topic": "<MQTT topic>",
         "graph": {
             "bucket": "<InfluxDB bucket>",
-            "field": "<InfluxDB field holding cumulative energy in watt-minutes (Wmin)>",
             "measurement": "<InfluxDB measurement name>",
+            "field": "<InfluxDB field holding cumulative energy in watt-minutes (Wmin)>",
             "bar_duration": "<seconds per bar, default 300 (5 min)>",
             "update_interval": "<query/redraw interval in seconds, default 60>"
         }
