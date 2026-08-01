@@ -2,7 +2,9 @@
 
 import pytest
 
-from power import compute_energy_segments, compute_bar_values, build_power_flux_query
+from power import (compute_energy_segments, compute_bar_values,
+                   build_power_flux_query, parse_duration_seconds,
+                   compute_bar_layout)
 
 
 class TestComputeEnergySegments:
@@ -130,6 +132,112 @@ class TestComputeBarValues:
         segments = [(now - 10, now, 100)]
         bars = compute_bar_values(segments, n_bars=1, bar_duration=10, now=now)
         assert abs(bars[0] - 600.0) < 1e-9
+
+
+class TestParseDurationSeconds:
+    def test_integer_input(self):
+        assert parse_duration_seconds(300) == 300.0
+
+    def test_float_input(self):
+        assert parse_duration_seconds(60.5) == 60.5
+
+    def test_zero_input(self):
+        assert parse_duration_seconds(0) == 0.0
+
+    def test_iso8601_seconds(self):
+        assert parse_duration_seconds("PT30S") == 30.0
+
+    def test_iso8601_minutes(self):
+        assert parse_duration_seconds("PT5M") == 300.0
+
+    def test_iso8601_hours(self):
+        assert parse_duration_seconds("PT1H") == 3600.0
+
+    def test_iso8601_days(self):
+        assert parse_duration_seconds("P1D") == 86400.0
+
+    def test_iso8601_mixed(self):
+        assert parse_duration_seconds("PT1H30M") == 5400.0
+
+    def test_invalid_string_raises_value_error(self):
+        with pytest.raises(ValueError) as exc:
+            parse_duration_seconds("not-a-duration")
+        assert "Cannot parse duration value" in str(exc.value)
+
+    def test_returns_float_for_int(self):
+        result = parse_duration_seconds(120)
+        assert isinstance(result, float)
+
+
+class TestComputeBarLayout:
+    def test_zero_available_returns_zero_bars(self):
+        n, dur, slot_w, bar_w = compute_bar_layout(0)
+        assert n == 0
+
+    def test_negative_available_returns_zero_bars(self):
+        n, dur, slot_w, bar_w = compute_bar_layout(-10)
+        assert n == 0
+
+    def test_legacy_mode_no_display_duration(self):
+        # fallback_bar_width=8, 1 px gap → slot=9 px; 90 // 9 = 10 bars
+        n, dur, slot_w, bar_w = compute_bar_layout(90, display_duration_s=None,
+                                                    bar_duration_s=300,
+                                                    fallback_bar_width=8)
+        assert n == 10
+        assert dur == 300.0
+
+    def test_legacy_slot_and_bar_widths(self):
+        # Available=90, fallback=8 → slot_w=9, bar_w=8
+        n, dur, slot_w, bar_w = compute_bar_layout(90, display_duration_s=None,
+                                                    bar_duration_s=300,
+                                                    fallback_bar_width=8)
+        assert abs(slot_w - 9.0) < 1e-9
+        assert abs(bar_w - 8.0) < 1e-9
+
+    def test_display_duration_basic(self):
+        # display=1h, bar=5min → 12 bars; available=120 → slot=10, bar=9
+        n, dur, slot_w, bar_w = compute_bar_layout(120, display_duration_s=3600,
+                                                    bar_duration_s=300)
+        assert n == 12
+        assert dur == 300.0
+        assert abs(slot_w - 10.0) < 1e-9
+        assert abs(bar_w - 9.0) < 1e-9
+
+    def test_too_many_bars_scales_duration(self):
+        # display=1h, bar=1min → 60 bars desired, only 30 px → adjust to 30 bars
+        n, dur, slot_w, bar_w = compute_bar_layout(30, display_duration_s=3600,
+                                                    bar_duration_s=60)
+        assert n == 30
+        assert abs(dur - 120.0) < 1e-9   # 3600 / 30 = 120 s per bar
+
+    def test_bar_width_minimum_one_pixel(self):
+        # Very many bars forced to 1 px each
+        n, dur, slot_w, bar_w = compute_bar_layout(10, display_duration_s=3600,
+                                                    bar_duration_s=60)
+        # 60 desired but only 10 px → n=10, slot=1, bar=max(1, 0)=1
+        assert n == 10
+        assert bar_w >= 1.0
+
+    def test_effective_bar_duration_returned(self):
+        # When no scaling is needed, original bar_duration_s is returned unchanged
+        n, dur, slot_w, bar_w = compute_bar_layout(200, display_duration_s=3600,
+                                                    bar_duration_s=300)
+        assert dur == 300.0
+
+    def test_slot_width_fills_available(self):
+        # n * slot_w should equal available_px
+        available = 150
+        n, dur, slot_w, bar_w = compute_bar_layout(available, display_duration_s=3000,
+                                                    bar_duration_s=300)
+        # 3000/300 = 10 bars, slot_w = 150/10 = 15
+        assert n == 10
+        assert abs(n * slot_w - available) < 1e-9
+
+    def test_rounding_avoids_off_by_one_bar(self):
+        # display=3700s, bar=300s → 3700/300 ≈ 12.33 → rounds to 12 bars
+        n, _, _, _ = compute_bar_layout(200, display_duration_s=3700,
+                                        bar_duration_s=300)
+        assert n == 12
 
 
 class TestBuildPowerFluxQuery:
