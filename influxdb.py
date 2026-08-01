@@ -74,6 +74,9 @@ class _Colors:
     COLOR_RED = [228 / 256, 5 / 256, 41 / 256, 1]
 
 
+HEALTH_CHECK_INTERVAL = 60  # seconds between periodic health re-checks
+
+
 class InfluxDbConnector(object):
     """Manages the InfluxDB client lifecycle and executes Flux queries"""
 
@@ -83,6 +86,7 @@ class InfluxDbConnector(object):
         self._cfg = cfg
         self._client = None
         self._tray_icon = None
+        self._health_event = None
 
     def setup(self):
         """Open the client and verify connectivity"""
@@ -92,9 +96,15 @@ class InfluxDbConnector(object):
             org=self._cfg.org()
         )
         self._check_health()
+        self._health_event = Clock.schedule_interval(
+            lambda dt: self._check_health(), HEALTH_CHECK_INTERVAL
+        )
 
     def teardown(self):
         """Close the client"""
+        if self._health_event is not None:
+            self._health_event.cancel()
+            self._health_event = None
         if self._client is not None:
             try:
                 self._client.close()
@@ -123,13 +133,16 @@ class InfluxDbConnector(object):
             try:
                 query_api = self._client.query_api()
                 tables = query_api.query(flux_query, org=self._cfg.org())
+                self._schedule_icon_color(_Colors.COLOR_GREEN)
                 Clock.schedule_once(lambda dt: callback(tables))
             except InfluxDBError as e:
                 Logger.error("InfluxDB: Query error: %s", str(e))
+                self._schedule_icon_color(_Colors.COLOR_RED)
                 if error_callback:
                     Clock.schedule_once(lambda dt: error_callback(e))
             except Exception as e:
                 Logger.error("InfluxDB: Unexpected query error: %s", str(e))
+                self._schedule_icon_color(_Colors.COLOR_RED)
                 if error_callback:
                     Clock.schedule_once(lambda dt: error_callback(e))
 
