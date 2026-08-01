@@ -61,8 +61,9 @@
             "bucket": "<InfluxDB bucket>",
             "measurement": "<InfluxDB measurement name>",
             "field": "<InfluxDB field holding cumulative energy in watt-minutes (Wmin)>",
-            "bar_duration": "<seconds per bar, default 300 (5 min)>",
-            "update_interval": "<query/redraw interval in seconds, default 60>"
+            "display_duration": "<total time span to display, ISO 8601 duration (e.g. \"PT2H\") or seconds>",
+            "bar_duration": "<time span per bar, ISO 8601 duration (e.g. \"PT5M\") or seconds, default PT5M>",
+            "update_interval": "<query/redraw interval, ISO 8601 duration (e.g. \"PT1M\") or seconds, default PT1M>"
         }
     },
     "temperatures": [

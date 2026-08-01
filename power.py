@@ -2,6 +2,8 @@
 
 import time as _time
 
+import isodate
+
 from kivy import Logger
 from kivy.clock import Clock
 from kivy.graphics import Color, Line, Rectangle
@@ -19,6 +21,26 @@ class Colors:
     COLOR_GREEN = [0 / 256, 163 / 256, 86 / 256, 1]
     COLOR_YELLOW = [249 / 256, 176 / 256, 0 / 256, 1]
     COLOR_RED = [228 / 256, 5 / 256, 41 / 256, 1]
+
+
+def parse_duration_seconds(value) -> float:
+    """Parse a duration value to seconds.
+
+    Accepts:
+
+    * A number — interpreted as **seconds** directly.
+    * An ISO 8601 duration string (e.g. ``"PT5M"``, ``"PT1H"``,
+      ``"PT30S"``) — parsed via :mod:`isodate` and converted to seconds.
+
+    :raises ValueError: if the value cannot be parsed.
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        duration = isodate.parse_duration(str(value))
+        return duration.total_seconds()
+    except isodate.isoerror.ISO8601Error as e:
+        raise ValueError(f"Cannot parse duration value: {value!r}") from e
 
 
 def compute_energy_segments(points):
@@ -159,6 +181,51 @@ class PowerWidget(RelativeLayout):
             self.power = None
 
 
+def compute_bar_layout(available_px, display_duration_s=None, bar_duration_s=300.0,
+                       fallback_bar_width=8):
+    """Compute bar layout parameters from available pixel width and durations.
+
+    When *display_duration_s* is provided, bars are sized to fill the full time
+    span within the available width.  If the desired number of bars exceeds the
+    available pixels, *bar_duration_s* is scaled up so that every bar occupies at
+    least one pixel.
+
+    When *display_duration_s* is ``None``, the legacy fallback is used:
+    ``floor(available_px / (fallback_bar_width + 1))`` bars.
+
+    :param available_px: Available pixel width (widget width minus frame border).
+    :param display_duration_s: Total time span to display in seconds, or ``None``
+        for the legacy fixed-width fallback.
+    :param bar_duration_s: Desired time covered by each bar in seconds.
+    :param fallback_bar_width: Bar width in pixels used when *display_duration_s*
+        is ``None``.
+    :return: Tuple ``(n_bars, effective_bar_dur_s, slot_width_px, bar_width_px)``.
+        *slot_width_px* is the full float width per bar slot (bar + gap).
+        *bar_width_px* is the drawable float width of the bar itself.
+    """
+    if available_px <= 0:
+        return 0, float(bar_duration_s), 0.0, 0.0
+
+    if display_duration_s is not None and display_duration_s > 0 and bar_duration_s > 0:
+        n_bars = max(1, round(display_duration_s / bar_duration_s))
+        # Scale up bar_duration when more bars would be needed than pixels allow
+        if n_bars > available_px:
+            n_bars = available_px
+            bar_duration_s = display_duration_s / n_bars
+    else:
+        # Legacy mode: fit bars of fallback_bar_width with a 1 px gap
+        n_bars = max(0, available_px // (fallback_bar_width + 1))
+
+    if n_bars <= 0:
+        return 0, float(bar_duration_s), 0.0, 0.0
+
+    slot_w = available_px / n_bars
+    # Keep a 1 px gap between bars when space allows; minimum bar width is 1 px
+    bar_w = max(1.0, slot_w - 1.0)
+
+    return n_bars, float(bar_duration_s), slot_w, bar_w
+
+
 def build_power_flux_query(bucket, measurement, field, n_bars, bar_duration,
                            n_buffer):
     """Build the Flux query string for power history data.
@@ -198,14 +265,22 @@ class PowerHistoryGraph(RelativeLayout):
         InfluxDB measurement name (required).
     ``field``
         InfluxDB field name holding cumulative energy in watt-minutes (Wmin) (required).
+    ``display_duration``
+        Total time span shown by the graph, as an ISO 8601 duration string (e.g.
+        ``"PT2H"``) or seconds.  When set, the bar width is calculated automatically.
+        Omit to use the legacy fixed-width mode (``BAR_WIDTH`` pixels per bar).
     ``bar_duration``
-        Seconds covered by each bar (default 300 = 5 min).
+        Time covered by each bar as an ISO 8601 duration string (e.g. ``"PT5M"``)
+        or seconds (default ``"PT5M"`` = 300 s).  If the resulting number of bars
+        does not fit on screen, the duration is increased automatically.
     ``update_interval``
-        Query/redraw interval in seconds (default 60).
+        Query/redraw interval as an ISO 8601 duration string or seconds
+        (default ``"PT1M"`` = 60 s).
     """
 
-    BAR_WIDTH = 8           # px per bar
-    FRAME_BORDER = 1        # px width of structural frame lines
+    BAR_WIDTH = 8               # fallback px per bar (used when display_duration is not set)
+    BAR_HIGHLIGHT_HEIGHT = 2    # px height of the yellow accent strip on top of each bar
+    FRAME_BORDER = 1            # px width of structural frame lines
     # Extra bar slots fetched beyond n_bars to cover boundary conditions
     _QUERY_BUFFER_BARS = 2
 
@@ -254,7 +329,12 @@ class PowerHistoryGraph(RelativeLayout):
             self._query_influx()
 
     def _start_updates(self):
-        interval = int(self.conf.get("update_interval", 60))
+        interval_raw = self.conf.get("update_interval", "PT1M")
+        try:
+            interval = parse_duration_seconds(interval_raw)
+        except ValueError:
+            Logger.warning("PowerGraph: Invalid update_interval %r, using 60 s", interval_raw)
+            interval = 60.0
         self._update_event = Clock.schedule_interval(
             lambda dt: self._query_influx(), interval)
         # Only fire immediately if the widget already has a valid width;
@@ -267,13 +347,36 @@ class PowerHistoryGraph(RelativeLayout):
             self._update_event.cancel()
             self._update_event = None
 
+    def _bar_params(self):
+        """Return ``(n_bars, bar_dur_s, slot_w_px, bar_w_px)`` for the current config and size.
+
+        Delegates to :func:`compute_bar_layout` after resolving ISO 8601 durations
+        from ``self.conf``.
+        """
+        available = max(0, int(self.width) - self.FRAME_BORDER)
+        conf = self.conf or {}
+
+        bar_dur_raw = conf.get("bar_duration", "PT5M")
+        try:
+            bar_dur = parse_duration_seconds(bar_dur_raw)
+        except ValueError:
+            Logger.warning("PowerGraph: Invalid bar_duration %r, using 300 s", bar_dur_raw)
+            bar_dur = 300.0
+
+        display_dur = None
+        display_dur_raw = conf.get("display_duration", None)
+        if display_dur_raw is not None:
+            try:
+                display_dur = parse_duration_seconds(display_dur_raw)
+            except ValueError:
+                Logger.warning("PowerGraph: Invalid display_duration %r, ignored",
+                               display_dur_raw)
+
+        return compute_bar_layout(available, display_dur, bar_dur, self.BAR_WIDTH)
+
     def _n_bars(self):
         """Return how many bars fit in the current widget width."""
-        # Reserve one pixel on the left for the axis border only
-        available = max(0, int(self.width) - self.FRAME_BORDER)
-        if available <= 0:
-            return 0
-        return max(0, available // (self.BAR_WIDTH + 1))
+        return self._bar_params()[0]
 
     def _query_influx(self):
         if not self.conf or not self.influxdb_widget:
@@ -286,11 +389,10 @@ class PowerHistoryGraph(RelativeLayout):
             Logger.warning("PowerGraph: 'bucket', 'measurement' and 'field' must be configured")
             return
 
-        n = self._n_bars()
+        n, bar_duration, _, _ = self._bar_params()
         if n <= 0:
             return
 
-        bar_duration = int(self.conf.get("bar_duration", 300))
         flux_query = build_power_flux_query(
             bucket, measurement, field, n, bar_duration, self._QUERY_BUFFER_BARS)
 
@@ -319,8 +421,7 @@ class PowerHistoryGraph(RelativeLayout):
             self._max_value = None
             return
 
-        n = self._n_bars()
-        bar_duration = int(self.conf.get("bar_duration", 300)) if self.conf else 300
+        n, bar_duration, _, _ = self._bar_params()
         now = _time.time()
 
         bar_watts = compute_bar_values(segments, n, bar_duration, now)
@@ -359,20 +460,29 @@ class PowerHistoryGraph(RelativeLayout):
             Line(points=[0, 0, 0, h], width=b, group=self._CANVAS_GROUP)
 
             if self._bars:
-                n = len(self._bars)
-                available = w - b  # full width minus left border only
-                total_bars = n * self.BAR_WIDTH
-                # n gaps (one before each bar); last bar reaches the right edge
-                spacing = ((available - total_bars) / n
-                           if available > total_bars and n > 0
-                           else 1.0)
+                n, _, slot_w, bar_w = self._bar_params()
+                if n <= 0:
+                    return
 
-                Color(*Colors.COLOR_YELLOW, group=self._CANVAS_GROUP)
-                for i, normalized in enumerate(self._bars):
-                    x = b + spacing * (i + 1) + self.BAR_WIDTH * i
-                    bar_h = max(b, normalized * (h - b))
-                    Rectangle(pos=(x, b), size=(self.BAR_WIDTH, bar_h),
-                               group=self._CANVAS_GROUP)
+                for i, normalized in enumerate(self._bars[:n]):
+                    bar_h = max(float(b), normalized * (h - b))
+                    # Float x-position for visually even distribution across the
+                    # full widget width — each bar occupies exactly slot_w pixels.
+                    x = float(b) + i * slot_w
+
+                    # Grey body — everything below the yellow top accent
+                    grey_h = max(0.0, bar_h - self.BAR_HIGHLIGHT_HEIGHT)
+                    if grey_h > 0:
+                        Color(*Colors.COLOR_GREY, group=self._CANVAS_GROUP)
+                        Rectangle(pos=(x, float(b)), size=(bar_w, grey_h),
+                                  group=self._CANVAS_GROUP)
+
+                    # Yellow accent strip — top 2 px of each bar
+                    top_h = min(float(self.BAR_HIGHLIGHT_HEIGHT), bar_h)
+                    top_y = float(b) + max(0.0, bar_h - self.BAR_HIGHLIGHT_HEIGHT)
+                    Color(*Colors.COLOR_YELLOW, group=self._CANVAS_GROUP)
+                    Rectangle(pos=(x, top_y), size=(bar_w, top_h),
+                              group=self._CANVAS_GROUP)
 
     def _update_max_label(self, *args):
         if self._max_label is None:
