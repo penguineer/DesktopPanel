@@ -334,3 +334,66 @@ class TestInfluxDbConnectorQueryIconUpdate:
         self._fire_clock_once_calls(mock_clock)
 
         assert tray.icon_color == influxdb_module._Colors.COLOR_RED
+
+    def test_influxdb_error_callback_receives_exception(self, monkeypatch):
+        """error_callback must be called with the exception (no NameError)."""
+        import influxdb as influxdb_module
+        from influxdb_client.client.exceptions import InfluxDBError
+
+        mock_clock = _MockClock()
+        monkeypatch.setattr(influxdb_module, "Clock", mock_clock)
+
+        cfg = InfluxDbConfiguration(url="http://localhost:8086", token="t", org="o")
+        connector = InfluxDbConnector(cfg)
+        err = InfluxDBError(response=None)
+        connector._client = _FakeInfluxDBClient(query_error=err)
+
+        received = []
+        self._run_query_and_collect_threads_with_error_cb(
+            connector, lambda e: received.append(e))
+        self._fire_clock_once_calls(mock_clock)
+
+        assert len(received) == 1
+        assert received[0] is err
+
+    def test_generic_error_callback_receives_exception(self, monkeypatch):
+        """error_callback must be called with a generic exception (no NameError)."""
+        import influxdb as influxdb_module
+
+        mock_clock = _MockClock()
+        monkeypatch.setattr(influxdb_module, "Clock", mock_clock)
+
+        cfg = InfluxDbConfiguration(url="http://localhost:8086", token="t", org="o")
+        connector = InfluxDbConnector(cfg)
+        err = ConnectionResetError(104, "Connection reset by peer")
+        connector._client = _FakeInfluxDBClient(query_error=err)
+
+        received = []
+        self._run_query_and_collect_threads_with_error_cb(
+            connector, lambda e: received.append(e))
+        self._fire_clock_once_calls(mock_clock)
+
+        assert len(received) == 1
+        assert received[0] is err
+
+    def _run_query_and_collect_threads_with_error_cb(self, connector, error_callback):
+        """Like _run_query_and_collect_threads but passes an error_callback."""
+        spawned = []
+        orig_start = threading.Thread.start
+
+        def patched_start(self_thread):
+            orig_start(self_thread)
+            spawned.append(self_thread)
+
+        threading.Thread.start = patched_start
+        try:
+            connector.query(
+                "from(bucket:\"b\") |> range(start: -1h)",
+                callback=lambda tables: None,
+                error_callback=error_callback,
+            )
+        finally:
+            threading.Thread.start = orig_start
+
+        for t in spawned:
+            t.join(timeout=5)

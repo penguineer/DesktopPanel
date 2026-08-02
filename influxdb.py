@@ -139,12 +139,12 @@ class InfluxDbConnector(object):
                 Logger.error("InfluxDB: Query error: %s", str(e))
                 self._schedule_icon_color(_Colors.COLOR_RED)
                 if error_callback:
-                    Clock.schedule_once(lambda dt: error_callback(e))
+                    Clock.schedule_once(lambda dt, _e=e: error_callback(_e))
             except Exception as e:
                 Logger.error("InfluxDB: Unexpected query error: %s", str(e))
                 self._schedule_icon_color(_Colors.COLOR_RED)
                 if error_callback:
-                    Clock.schedule_once(lambda dt: error_callback(e))
+                    Clock.schedule_once(lambda dt, _e=e: error_callback(_e))
 
         threading.Thread(target=_run, daemon=True).start()
 
