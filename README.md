@@ -25,33 +25,36 @@ If no known board is detected the backlight sysfs environment is faked in a temp
 
 ## Run with Docker
 
-Because access to several system resources is needed, the container must be started with elevated access rights. In addition, the configuration directory needs to be made available.
+Because access to several system resources is needed, the container must be started with elevated access rights. In addition, the configuration directory needs to be made available. The screenshots directory can be mounted separately to persist generated screenshots.
 
-DesktopPanel expects its runtime configuration below `/app/configuration`:
+DesktopPanel uses the following runtime directories below `/app`:
 
 ```text
 configuration/
 ├── desktop-panel-config.json
 └── issuelist.json
+screenshots/
 ```
 
 The below example shows how to run the container on the command line.
-Please set `CONFIGURATION_PATH` to a valid absolute path containing the configuration files.
+Please set `CONFIGURATION_PATH` to a valid absolute path containing the configuration files and `SCREENSHOTS_PATH` to the directory where generated screenshots should be stored.
 
 ```bash
 VERSION=latest
 CONFIGURATION_PATH=/path/to/configuration
+SCREENSHOTS_PATH=/path/to/screenshots
 
 docker run -d -it \
            --name desktop-panel \
            --restart always \
            --privileged \
            --mount "type=bind,source=${CONFIGURATION_PATH},target=/app/configuration,readonly" \
+           --mount "type=bind,source=${SCREENSHOTS_PATH},target=/app/screenshots" \
            -e "TZ=Europe/Berlin" \
            mrtux/desktop-panel:$VERSION
 ```
 
-Note that with this mount the application will still react to changes to the JSON files.
+Note that with this configuration mount the application will still react to changes to the JSON files.
 
 ## API
 
@@ -84,7 +87,7 @@ This may change in future versions.
 
 ### Known Commands
 
-* `screenshot` Takes a screenshot and stores in the working directory. This command has no arguments.
+* `screenshot` Takes a screenshot and stores it in the `screenshots` directory. This command has no arguments.
 * `show page` Toggles to the page given in the `page` argument. In addition, specify `go_back_if_current: True` to pop the navigation stack if the page is already active and `block_input: True` to block user input to avoid clickjacking.
 
 ### Syslog Channel

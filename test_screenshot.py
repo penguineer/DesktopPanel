@@ -1,11 +1,15 @@
 """ Pytest tests for the screenshot module """
 
+from types import SimpleNamespace
+
 import pytest
+import screenshot as screenshot_module
 from screenshot import (
     ScaleStrategy,
     AspectFitStrategy,
     SalientScaleStrategy,
     capture_widget_texture,
+    screenshot_window,
 )
 
 
@@ -15,6 +19,26 @@ class _MockWidget:
     def __init__(self, width=0, height=0):
         self.width = width
         self.height = height
+
+
+class TestScreenshotWindow:
+    def test_screenshot_is_stored_in_screenshots_directory(self, monkeypatch):
+        captured = {}
+
+        def fake_screenshot(*, name):
+            captured["name"] = name
+            return name
+
+        monkeypatch.setattr(
+            screenshot_module,
+            "Window",
+            SimpleNamespace(screenshot=fake_screenshot),
+        )
+
+        result = screenshot_window("test.png")
+
+        assert captured["name"] == "screenshots/test.png"
+        assert result == "screenshots/test.png"
 
 
 class TestScaleStrategy:
