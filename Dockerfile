@@ -6,8 +6,9 @@ RUN mkdir -p /root/.kivy \
 
 RUN mkdir /app \
     && mkdir /app/assets \
-    && touch /app/desktop-panel-config.json \
-    && touch /app/issuelist.json
+    && mkdir /app/configuration \
+    && touch /app/configuration/desktop-panel-config.json \
+    && touch /app/configuration/issuelist.json
 
 
 COPY requirements.txt /
