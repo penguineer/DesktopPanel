@@ -1,5 +1,5 @@
 desktop-panel.cfg
-desktop-panel-config.json
+configuration/desktop-panel-config.json
 
 __pycache__/
 *.pyc

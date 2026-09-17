@@ -1,6 +1,6 @@
 .git
 .github
 Dockerfile
-desktop-panel-config.json
+configuration/desktop-panel-config.json
 issuelist.json
 README.md

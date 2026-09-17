@@ -122,7 +122,7 @@ Example RabbitMQ setup (adjust names to your environment):
    If syslog-ng uses the host name as part of the routing key, a wildcard binding such as `#` or `*.error` can be used depending on your routing key scheme.
 4. **Configure DesktopPanel**: Set `amqp.syslog_channel` to the queue name (e.g. `syslog.DesktopPanel`) and optionally set `amqp.declare` to `false` if the queue is managed externally.
 
-Example `desktop-panel-config.json` snippet:
+Example `configuration/desktop-panel-config.json` snippet:
 ```json
 "amqp": {
   "host": "rabbitmq.example.com",
