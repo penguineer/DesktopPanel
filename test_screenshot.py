@@ -1,6 +1,9 @@
 """ Pytest tests for the screenshot module """
 
+from types import SimpleNamespace
+
 import pytest
+import screenshot as screenshot_module
 from screenshot import (
     ScaleStrategy,
     AspectFitStrategy,
@@ -26,7 +29,11 @@ class TestScreenshotWindow:
             captured["name"] = name
             return name
 
-        monkeypatch.setattr("screenshot.Window.screenshot", fake_screenshot)
+        monkeypatch.setattr(
+            screenshot_module,
+            "Window",
+            SimpleNamespace(screenshot=fake_screenshot),
+        )
 
         result = screenshot_window("test.png")
 
