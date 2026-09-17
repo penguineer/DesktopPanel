@@ -45,10 +45,7 @@ class JsonObserver(FileSystemEventHandler):
             self._observer.stop()
             self._observer.join()
 
-    def _reload_if_target(self, event_path: str):
-        if os.path.abspath(event_path) != self._json_path:
-            return
-
+    def reload(self):
         try:
             with open(self._json_path, "r") as f:
                 self._update_callback(json.load(f))
@@ -60,6 +57,10 @@ class JsonObserver(FileSystemEventHandler):
             if self._failed_callback is not None:
                 self._failed_callback(True)
             Logger.warning("Issues: %s", e)
+
+    def _reload_if_target(self, event_path: str):
+        if os.path.abspath(event_path) == self._json_path:
+            self.reload()
 
     def on_modified(self, event):
         self._reload_if_target(event.src_path)
