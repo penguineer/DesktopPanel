@@ -1,14 +1,20 @@
 """ Module for application screenshots: window captures and widget thumbnails """
 
 from datetime import datetime
+from pathlib import Path
 
 from kivy import Logger
 from kivy.core.window import Window
 from kivy.graphics.texture import Texture
 
 
+SCREENSHOT_DIRECTORY = Path("screenshots")
+
+
 def screenshot_window(name=None):
     """Take a screenshot of the entire application window and save to a file.
+
+    Screenshots are stored below the runtime ``screenshots`` directory.
 
     :param name: Optional file name.  When ``None`` a timestamped default is
         used (``Screenshot <datetime>.png``).
@@ -16,8 +22,9 @@ def screenshot_window(name=None):
     """
     if name is None:
         name = "Screenshot {}.png".format(datetime.now())
-    Logger.info("Screenshot: Taking a screenshot to %s", name)
-    return Window.screenshot(name=name)
+    path = SCREENSHOT_DIRECTORY / name
+    Logger.info("Screenshot: Taking a screenshot to %s", path)
+    return Window.screenshot(name=str(path))
 
 
 class ScaleStrategy:
@@ -32,11 +39,11 @@ class ScaleStrategy:
         """Capture *widget* and return a thumbnail texture, or ``None``.
 
         :param widget: A Kivy widget that is attached to the widget tree and
-            has non-zero size.
+        has non-zero size.
         :param max_width: Hint: maximum thumbnail width in pixels.
         :param max_height: Hint: maximum thumbnail height in pixels.
-        :returns: A :class:`~kivy.graphics.texture.Texture`, or ``None`` on
-            failure or when the widget has zero dimensions.
+        :returns: A :class:`~kivy.graphics.texture.Texture`, or ``None`` if
+        capture failed or the widget has zero dimensions.
         """
         raise NotImplementedError
 
