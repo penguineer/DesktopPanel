@@ -126,7 +126,7 @@ class IssueList(BoxLayout):
                                           self._border_mark)
             try:
                 self._observer.setup()
-                self._observer.on_modified(None)
+                self._observer.reload()
             except FileNotFoundError as e:
                 Logger.warning("Issues: %s", e)
                 self._border_mark(failed=True)

@@ -1,10 +1,11 @@
 """ Module for reloadable JSON files """
 
 import json
+import os
 from typing import Callable, Optional
 
 from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 
 from kivy import Logger
 
@@ -17,7 +18,8 @@ class JsonObserver(FileSystemEventHandler):
         if not json_path:
             raise ValueError("JSON file path must be provided!")
 
-        self._json_path = json_path
+        self._json_path = os.path.abspath(json_path)
+        self._watch_path = os.path.dirname(self._json_path)
 
         if not update_callback:
             raise ValueError("Update callback must be provided!")
@@ -28,9 +30,9 @@ class JsonObserver(FileSystemEventHandler):
         self._observer = None
 
     def setup(self):
-        self._observer = Observer()
+        self._observer = PollingObserver()
         self._observer.schedule(self,
-                                self._json_path,
+                                self._watch_path,
                                 recursive=False)
         try:
             self._observer.start()
@@ -43,7 +45,7 @@ class JsonObserver(FileSystemEventHandler):
             self._observer.stop()
             self._observer.join()
 
-    def on_modified(self, _event):
+    def reload(self):
         try:
             with open(self._json_path, "r") as f:
                 self._update_callback(json.load(f))
@@ -55,3 +57,16 @@ class JsonObserver(FileSystemEventHandler):
             if self._failed_callback is not None:
                 self._failed_callback(True)
             Logger.warning("Issues: %s", e)
+
+    def _reload_if_target(self, event_path: str):
+        if os.path.abspath(event_path) == self._json_path:
+            self.reload()
+
+    def on_modified(self, event):
+        self._reload_if_target(event.src_path)
+
+    def on_created(self, event):
+        self._reload_if_target(event.src_path)
+
+    def on_moved(self, event):
+        self._reload_if_target(event.dest_path)
