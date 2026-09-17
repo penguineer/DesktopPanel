@@ -25,27 +25,33 @@ If no known board is detected the backlight sysfs environment is faked in a temp
 
 ## Run with Docker
 
-Because access to several system resources is needed, the container must be started with elevated access rights. In addition, configuration files need to be made available.
+Because access to several system resources is needed, the container must be started with elevated access rights. In addition, the configuration directory needs to be made available.
+
+DesktopPanel expects its runtime configuration below `/app/configuration`:
+
+```text
+configuration/
+├── desktop-panel-config.json
+└── issuelist.json
+```
 
 The below example shows how to run the container on the command line.
-Please do not forget to set the variables accordingly and make sure you provide a valid absolute path to the configuration files.
+Please set `CONFIGURATION_PATH` to a valid absolute path containing the configuration files.
 
 ```bash
 VERSION=latest
-CFGPATH=/path/to/desktop-panel-config.json
-ISSUELISTPATH=/path/to/issuelist.json
+CONFIGURATION_PATH=/path/to/configuration
 
 docker run -d -it \
            --name desktop-panel \
            --restart always \
            --privileged \
-           --mount "type=bind,source=${CFGPATH},target=/app/desktop-panel-config.json,readonly" \
-           --mount "type=bind,source=${ISSUELISTPATH},target=/app/issuelist.json,readonly" \
+           --mount "type=bind,source=${CONFIGURATION_PATH},target=/app/configuration,readonly" \
            -e "TZ=Europe/Berlin" \
            mrtux/desktop-panel:$VERSION
 ```
 
-Note that with these mounts the application will still react to changes to the JSON files.
+Note that with this mount the application will still react to changes to the JSON files.
 
 ## API
 
@@ -116,7 +122,7 @@ Example RabbitMQ setup (adjust names to your environment):
    If syslog-ng uses the host name as part of the routing key, a wildcard binding such as `#` or `*.error` can be used depending on your routing key scheme.
 4. **Configure DesktopPanel**: Set `amqp.syslog_channel` to the queue name (e.g. `syslog.DesktopPanel`) and optionally set `amqp.declare` to `false` if the queue is managed externally.
 
-Example `desktop-panel-config.json` snippet:
+Example `configuration/desktop-panel-config.json` snippet:
 ```json
 "amqp": {
   "host": "rabbitmq.example.com",

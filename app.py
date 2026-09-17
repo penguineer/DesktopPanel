@@ -71,7 +71,7 @@ class TabbedPanelApp(App):
         if not path:
             return
 
-        self.config_obs = JsonObserver("desktop-panel-config.json",
+        self.config_obs = JsonObserver(path,
                                        update_callback=self.schedule_update_configuration,
                                        failed_callback=None)
         self.config_obs.setup()
@@ -202,7 +202,7 @@ async def main():
     # build and run app
     app = TabbedPanelApp()
     # Setup path for automatic reloading with initial configuration pre-load
-    app.conf_path = "desktop-panel-config.json"
+    app.conf_path = "configuration/desktop-panel-config.json"
 
     await app.async_run()
 

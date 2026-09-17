@@ -46,8 +46,8 @@
   },
   "gtd": {
       "issuelist": {
-        "label": "<optional label for the issue list">
-        "path": "<issue list path>"
+        "label": "<optional label for the issue list>",
+        "path": "configuration/issuelist.json"
       }
   },
   "system": {
