@@ -15,7 +15,7 @@ from loki_events import (
     parse_query_range_response,
     parse_tail_response,
 )
-from operational_events import LokiEntry, OperationalEventStore
+from operational_events import LokiEntry, OperationalEventStore, operational_event_from_loki
 
 
 def _loki_entry(ts, line="event", severity="warning"):
