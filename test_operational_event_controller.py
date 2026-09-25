@@ -222,6 +222,45 @@ class TestOperationalEventController:
         assert _FakeSource.instances == []
         assert _FakeJarvisSource.instances == []
 
+    def test_valid_config_restarts_after_invalid_duration(self, monkeypatch):
+        monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+        monkeypatch.setattr(
+            operational_event_controller,
+            "JarvisEventSource",
+            _FakeJarvisSource,
+        )
+        controller = OperationalEventController()
+        valid = {
+            "history_duration": "PT24H",
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "secret",
+            },
+            "jarvis": {
+                "url": "https://jarvis.example",
+            },
+        }
+
+        controller.update_config(valid)
+        first_loki = _FakeSource.instances[-1]
+        first_jarvis = _FakeJarvisSource.instances[-1]
+
+        controller.update_config({
+            **valid,
+            "history_duration": "24h",
+        })
+
+        assert first_loki.torn_down is True
+        assert first_jarvis.torn_down is True
+
+        controller.update_config(valid)
+
+        assert len(_FakeSource.instances) == 2
+        assert len(_FakeJarvisSource.instances) == 2
+        assert _FakeSource.instances[-1].started is True
+        assert _FakeJarvisSource.instances[-1].started is True
+
     def test_teardown_stops_source(self, monkeypatch):
         monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
         controller = OperationalEventController()
