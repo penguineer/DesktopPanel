@@ -1,5 +1,7 @@
 """Configuration and lifecycle controller for operational events."""
 
+import time
+
 from kivy import Logger
 
 from loki_events import LokiClient, LokiEventSource
@@ -74,7 +76,7 @@ class OperationalEventController(object):
             "loki",
             "configuration-error",
             message,
-            timestamp_ns=0,
+            timestamp_ns=time.time_ns(),
         )
         if is_new and self._on_failure is not None:
             self._on_failure("configuration-error", message)
