@@ -2,6 +2,7 @@
 
 import operational_event_controller
 from operational_event_controller import OperationalEventController
+from operational_events import JarvisAlertEvent
 
 
 class _FakeSource:
@@ -355,6 +356,52 @@ class TestOperationalEventController:
         assert jarvis.torn_down is True
         assert len(_FakeJarvisSource.instances) == 2
         assert _FakeJarvisSource.instances[1].has_previous_state is False
+
+    def test_jarvis_recreation_receives_retained_state_flag(self, monkeypatch):
+        monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+        monkeypatch.setattr(
+            operational_event_controller,
+            "JarvisEventSource",
+            _FakeJarvisSource,
+        )
+        controller = OperationalEventController()
+        controller.update_config({
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "secret",
+            },
+            "jarvis": {"url": "https://jarvis-first.example"},
+        })
+        controller.jarvis_store.reconcile([
+            JarvisAlertEvent(
+                event_id="retained",
+                timestamp_ns=1,
+                source="jarvis",
+                source_annotation="host-a",
+                summary="active",
+                cluster_name="example",
+                fingerprint="abc",
+                starts_at="2026-09-25T22:00:00Z",
+                starts_at_ns=1,
+                resolved_at=None,
+                status="active",
+                severity="warning",
+                labels={},
+                annotations={},
+            )
+        ])
+
+        controller.update_config({
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "secret",
+            },
+            "jarvis": {"url": "https://jarvis-second.example"},
+        })
+
+        assert _FakeJarvisSource.instances[-1].has_previous_state is True
 
     def test_incomplete_jarvis_config_creates_only_jarvis_source_error(self, monkeypatch):
         monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
