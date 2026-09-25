@@ -596,8 +596,17 @@ class JarvisEventSource:
         bootstrap = not self._has_success
         self._has_success = True
         self._set_healthy()
-        if changed and not bootstrap and self.on_new_events is not None:
-            self.on_new_events(changed)
+        attention_events = [
+            event
+            for event in changed
+            if event.needs_attention
+        ]
+        if (
+            attention_events
+            and not bootstrap
+            and self.on_new_events is not None
+        ):
+            self.on_new_events(attention_events)
 
     async def _watch_changes(self, client, invalidated):
         while True:
