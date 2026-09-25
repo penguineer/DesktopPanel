@@ -1,5 +1,7 @@
 """Tests for Loki transport normalization and synchronization."""
 
+import asyncio
+
 import pytest
 
 from loki_events import (
@@ -145,8 +147,7 @@ class _SubdivisionClient(LokiClient):
 
 
 class TestHistorySubdivision:
-    @pytest.mark.asyncio
-    async def test_saturated_interval_is_split_and_deduplicated(self):
+    def test_saturated_interval_is_split_and_deduplicated(self):
         duplicate = _loki_entry(5, "duplicate")
         left = _loki_entry(2, "left")
         right = _loki_entry(8, "right")
@@ -157,14 +158,13 @@ class TestHistorySubdivision:
             (5, 10, 2): ([duplicate, right], False),
         })
 
-        entries = await client.query_range(0, 10)
+        entries = asyncio.run(client.query_range(0, 10))
 
         assert [e.line for e in entries] == ["left", "duplicate", "right"]
         assert (0, 5, 2) in client.calls
         assert (5, 10, 2) in client.calls
 
-    @pytest.mark.asyncio
-    async def test_single_nanosecond_interval_increases_limit(self):
+    def test_single_nanosecond_interval_increases_limit(self):
         a = _loki_entry(5, "a")
         b = _loki_entry(5, "b")
         c = _loki_entry(5, "c")
@@ -178,13 +178,12 @@ class TestHistorySubdivision:
             max_page_limit=4,
         )
 
-        entries = await client.query_range(5, 6)
+        entries = asyncio.run(client.query_range(5, 6))
 
         assert {e.line for e in entries} == {"a", "b", "c"}
         assert client.calls == [(5, 6, 2), (5, 6, 4)]
 
-    @pytest.mark.asyncio
-    async def test_unpageable_saturated_timestamp_fails_explicitly(self):
+    def test_unpageable_saturated_timestamp_fails_explicitly(self):
         a = _loki_entry(5, "a")
         b = _loki_entry(5, "b")
 
@@ -198,7 +197,7 @@ class TestHistorySubdivision:
         )
 
         with pytest.raises(LokiHistoryIncompleteError):
-            await client.query_range(5, 6)
+            asyncio.run(client.query_range(5, 6))
 
 
 class TestLokiSync:
@@ -274,24 +273,22 @@ class _HistoryClient:
 
 
 class TestHistorySync:
-    @pytest.mark.asyncio
-    async def test_successful_history_sync_advances_checkpoint(self):
+    def test_successful_history_sync_advances_checkpoint(self):
         store = OperationalEventStore(history_duration="PT10S")
         sync = LokiSync(store)
         client = _HistoryClient([_loki_entry(95_000_000_000)])
 
-        added = await sync.sync_history(
+        added = asyncio.run(sync.sync_history(
             client,
             100_000_000_000,
             initial=True,
-        )
+        ))
 
         assert len(added) == 1
         assert sync.history_covered_through_ns == 100_000_000_000
         assert client.calls == [(90_000_000_000, 100_000_000_001)]
 
-    @pytest.mark.asyncio
-    async def test_failed_history_sync_does_not_advance_checkpoint(self):
+    def test_failed_history_sync_does_not_advance_checkpoint(self):
         class FailingClient:
             async def query_range(self, _start_ns, _end_ns):
                 raise RuntimeError("history failed")
@@ -299,6 +296,6 @@ class TestHistorySync:
         sync = LokiSync(OperationalEventStore())
 
         with pytest.raises(RuntimeError):
-            await sync.sync_history(FailingClient(), 100, initial=True)
+            asyncio.run(sync.sync_history(FailingClient(), 100, initial=True))
 
         assert sync.history_covered_through_ns is None
