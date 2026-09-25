@@ -333,6 +333,15 @@ class JarvisSync:
 
             if resolved_rows:
                 resolved_row = resolved_rows[-1]
+                resolved_index = rows.index(resolved_row)
+                prior_status = (
+                    rows[resolved_index - 1].get("status")
+                    if resolved_index > 0
+                    else None
+                )
+                if prior_status == "suppressed":
+                    continue
+
                 resolved_at = resolved_row.get("recordedAt")
                 resolved_ns = _iso_to_ns(resolved_at)
                 if resolved_ns < cutoff_ns:
