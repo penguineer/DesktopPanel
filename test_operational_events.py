@@ -45,6 +45,26 @@ class TestLokiEntryIdentity:
         assert _entry(host="host-a").stable_id != _entry(host="host-b").stable_id
 
 
+    def test_syslog_id_ignores_auxiliary_loki_labels(self):
+        history = _entry(
+            detected_level="warn",
+            service_name="desktop-panel-test",
+        )
+        tail = _entry(
+            detected_level="warn",
+            service_name="desktop-panel-test",
+            suppression_matches="",
+            stream_extra="tail-only",
+        )
+
+        assert history.stable_id == tail.stable_id
+
+    def test_syslog_id_changes_when_identity_label_changes(self):
+        assert _entry(application="first").stable_id != _entry(
+            application="second"
+        ).stable_id
+
+
 class TestSyslogEvent:
     def test_warning_is_accepted(self):
         event = SyslogEvent.from_loki(_entry())
