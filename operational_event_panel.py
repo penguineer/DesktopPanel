@@ -58,10 +58,12 @@ def _formatted_timestamp(timestamp_ns):
 def _event_color(event):
     if isinstance(event, SourceStateEvent):
         return Colors.COLOR_RED
+    if isinstance(event, JarvisAlertEvent) and event.status == "resolved":
+        return Colors.COLOR_GREY
     if isinstance(event, (SyslogEvent, JarvisAlertEvent)):
         if event.severity in _CRITICAL_SEVERITIES:
             return Colors.COLOR_RED
-        if event.severity in _ERROR_SEVERITIES or event.severity in ("warning", "warn"):
+        if event.severity in _ERROR_SEVERITIES:
             return Colors.COLOR_YELLOW
     return Colors.COLOR_WHITE
 
