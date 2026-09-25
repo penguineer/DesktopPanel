@@ -44,11 +44,13 @@ class _FakeJarvisSource:
         store,
         on_new_events=None,
         on_failure=None,
+        has_previous_state=False,
     ):
         self.client_factory = client_factory
         self.store = store
         self.on_new_events = on_new_events
         self.on_failure = on_failure
+        self.has_previous_state = has_previous_state
         self.started = False
         self.torn_down = False
         self.__class__.instances.append(self)
@@ -194,6 +196,32 @@ class TestOperationalEventController:
         assert controller.store.events[0].state == "configuration-error"
         assert _FakeSource.instances == []
 
+    def test_repeated_invalid_duration_never_starts_sources(self, monkeypatch):
+        monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+        monkeypatch.setattr(
+            operational_event_controller,
+            "JarvisEventSource",
+            _FakeJarvisSource,
+        )
+        controller = OperationalEventController()
+        config = {
+            "history_duration": "24h",
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "secret",
+            },
+            "jarvis": {
+                "url": "https://jarvis.example",
+            },
+        }
+
+        controller.update_config(config)
+        controller.update_config(config)
+
+        assert _FakeSource.instances == []
+        assert _FakeJarvisSource.instances == []
+
     def test_teardown_stops_source(self, monkeypatch):
         monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
         controller = OperationalEventController()
@@ -287,6 +315,7 @@ class TestOperationalEventController:
         assert loki.torn_down is False
         assert jarvis.torn_down is True
         assert len(_FakeJarvisSource.instances) == 2
+        assert _FakeJarvisSource.instances[1].has_previous_state is False
 
     def test_incomplete_jarvis_config_creates_only_jarvis_source_error(self, monkeypatch):
         monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
