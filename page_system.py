@@ -29,6 +29,10 @@ def _higher_notification(current, candidate):
     return candidate if rank[candidate] > rank[current] else current
 
 
+def _notification_for_operational_failure():
+    return "Critical"
+
+
 Builder.load_string("""
 #:import TemperaturePanel temperature.TemperaturePanel
 #:import PowerWidget power.PowerWidget
@@ -126,8 +130,11 @@ class SystemPage(globalcontent.ContentPage):
         self.notification = _higher_notification(self.notification, level)
 
     def _on_operational_failure(self, _state, _message):
-        if not self.active and self.notification in ("None", "Info"):
-            self.notification = "Warning"
+        if not self.active:
+            self.notification = _higher_notification(
+                self.notification,
+                _notification_for_operational_failure(),
+            )
 
     def teardown(self):
         self._operational_events.teardown()
