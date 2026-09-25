@@ -15,6 +15,8 @@ def _notification_for_operational_events(events):
     for event in events:
         if not isinstance(event, (SyslogEvent, JarvisAlertEvent)):
             continue
+        if isinstance(event, JarvisAlertEvent) and not event.needs_attention:
+            continue
         if event.severity in ("critical", "crit", "alert", "emergency", "emerg"):
             return "Critical"
         if event.severity in ("error", "err", "warning", "warn"):
