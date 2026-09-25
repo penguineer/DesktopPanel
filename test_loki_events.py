@@ -337,6 +337,29 @@ class _ScriptedClient:
 
 
 class TestLokiEventSource:
+    def test_initial_history_can_notify_after_source_restart(self):
+        store = OperationalEventStore(history_duration="PT10S")
+        notifications = []
+        client = _HistoryClient([_loki_entry(95_000_000_000, "recovered")])
+        source = LokiEventSource(
+            lambda: None,
+            store,
+            on_new_events=lambda events: notifications.extend(events),
+            notify_initial_history=True,
+            time_ns=lambda: 100_000_000_000,
+        )
+
+        asyncio.run(
+            source._catch_up(
+                client,
+                100_000_000_000,
+                initial=True,
+                notify=True,
+            )
+        )
+
+        assert [event.summary for event in notifications] == ["recovered"]
+
     def test_initial_history_does_not_notify(self):
         store = OperationalEventStore(history_duration="PT10S")
         notifications = []
