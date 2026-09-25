@@ -7,6 +7,7 @@ from kivy import Logger
 from jarvis_events import JarvisClient, JarvisEventSource
 from loki_events import LokiClient, LokiEventSource
 from operational_events import JarvisEventStore, OperationalEventStore
+from timewidget import parse_iso8601_duration
 
 
 class OperationalEventController(object):
@@ -36,8 +37,11 @@ class OperationalEventController(object):
 
         if history_duration != self._history_duration:
             try:
-                self.loki_store.history_duration = history_duration
-                self.jarvis_store.history_duration = history_duration
+                seconds = parse_iso8601_duration(history_duration)
+                if seconds <= 0:
+                    raise ValueError(
+                        "Operational event history duration must be greater than zero"
+                    )
             except ValueError as exc:
                 self._configuration_error(
                     self.loki_store,
@@ -54,8 +58,10 @@ class OperationalEventController(object):
                     )
                 self._stop_loki()
                 self._stop_jarvis()
-                self._history_duration = history_duration
                 return
+
+            self.loki_store.history_duration = history_duration
+            self.jarvis_store.history_duration = history_duration
             self._history_duration = history_duration
 
         self._update_loki(config, loki, history_duration)
@@ -102,6 +108,7 @@ class OperationalEventController(object):
         if config_key == self._jarvis_config_key:
             return
 
+        had_previous_state = self.jarvis_store.has_alerts
         self._stop_jarvis()
         self._jarvis_config_key = config_key
 
@@ -126,6 +133,7 @@ class OperationalEventController(object):
             self.jarvis_store,
             on_new_events=self._on_new_events,
             on_failure=self._on_failure,
+            has_previous_state=had_previous_state,
         )
         self._jarvis_source.start()
 
