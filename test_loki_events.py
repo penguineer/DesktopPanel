@@ -6,6 +6,7 @@ import pytest
 
 from loki_events import (
     LokiClient,
+    LokiEventSource,
     LokiHistoryIncompleteError,
     LokiProtocolError,
     LokiSync,
@@ -299,3 +300,151 @@ class TestHistorySync:
             asyncio.run(sync.sync_history(FailingClient(), 100, initial=True))
 
         assert sync.history_covered_through_ns is None
+
+
+
+class _FakeClientContext:
+    def __init__(self, client):
+        self.client = client
+
+    async def __aenter__(self):
+        return self.client
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        return False
+
+
+class _ScriptedClient:
+    def __init__(self, history_entries, tail_batches, *, history_error=None):
+        self.history_entries = history_entries
+        self.tail_batches = tail_batches
+        self.history_error = history_error
+        self.history_calls = []
+
+    async def query_range(self, start_ns, end_ns):
+        self.history_calls.append((start_ns, end_ns))
+        if self.history_error is not None:
+            raise self.history_error
+        return list(self.history_entries)
+
+    async def tail(self, *, connected_event=None):
+        if connected_event is not None:
+            connected_event.set()
+        for batch in self.tail_batches:
+            if isinstance(batch, Exception):
+                raise batch
+            yield batch
+
+
+class TestLokiEventSource:
+    def test_initial_history_does_not_notify(self):
+        store = OperationalEventStore(history_duration="PT10S")
+        notifications = []
+        client = _ScriptedClient(
+            history_entries=[_loki_entry(95_000_000_000, "history")],
+            tail_batches=[],
+        )
+        source = LokiEventSource(
+            lambda: _FakeClientContext(client),
+            store,
+            on_new_events=lambda events: notifications.extend(events),
+            reconnect_initial_seconds=1,
+            reconnect_max_seconds=1,
+            time_ns=lambda: 100_000_000_000,
+        )
+
+        async def exercise():
+            with pytest.raises(Exception):
+                await asyncio.wait_for(
+                    source._connected_session(client, initial=True),
+                    timeout=0.1,
+                )
+
+        asyncio.run(exercise())
+
+        assert [event.summary for event in store.events] == ["history"]
+        assert notifications == []
+
+    def test_failure_attention_only_once_per_failure_epoch(self):
+        store = OperationalEventStore()
+        failures = []
+        source = LokiEventSource(
+            lambda: None,
+            store,
+            on_failure=lambda state, message: failures.append((state, message)),
+            time_ns=iter([10, 20, 30]).__next__,
+        )
+
+        source._set_degraded("disconnected", "down")
+        source._set_degraded("catching-up", "recovering")
+        source._set_degraded("history-failed", "still down")
+
+        assert len(failures) == 1
+        assert len(store.events) == 1
+        assert store.events[0].event_id == "source-state:loki"
+        assert store.events[0].state == "history-failed"
+
+        source._set_healthy()
+        source._set_degraded("disconnected", "down again")
+
+        assert len(failures) == 2
+
+    def test_reconnect_history_notifies_only_new_deduplicated_events(self):
+        store = OperationalEventStore(history_duration="PT10S")
+        sync = LokiSync(store)
+        existing_entry = _loki_entry(95_000_000_000, "existing")
+        existing_event = operational_event_from_loki(existing_entry)
+        store.merge([existing_event])
+        sync.mark_history_covered(90_000_000_000)
+
+        notifications = []
+        client = _HistoryClient([
+            existing_entry,
+            _loki_entry(96_000_000_000, "new"),
+        ])
+        source = LokiEventSource(
+            lambda: None,
+            store,
+            on_new_events=lambda events: notifications.extend(events),
+            time_ns=lambda: 100_000_000_000,
+        )
+        source.sync = sync
+
+        asyncio.run(source._catch_up(client, 100_000_000_000, initial=False))
+
+        assert [event.summary for event in notifications] == ["new"]
+
+    def test_dropped_entries_require_catchup_without_duplicate_state_rows(self):
+        store = OperationalEventStore(history_duration="PT10S")
+        failures = []
+        source = LokiEventSource(
+            lambda: None,
+            store,
+            on_failure=lambda state, message: failures.append((state, message)),
+            time_ns=lambda: 100_000_000_000,
+        )
+
+        source._set_degraded("catching-up", "first")
+        source._set_degraded("catching-up", "retry")
+
+        assert len(failures) == 1
+        assert len(store.events) == 1
+        assert store.events[0].summary == "retry"
+
+    def test_teardown_cancels_running_task(self):
+        store = OperationalEventStore()
+        source = LokiEventSource(lambda: None, store)
+
+        async def exercise():
+            blocker = asyncio.Event()
+
+            async def never_finishes():
+                await blocker.wait()
+
+            source._task = asyncio.create_task(never_finishes())
+            assert source.running
+            source.teardown()
+            await source.wait_stopped()
+            assert source._task.cancelled()
+
+        asyncio.run(exercise())
