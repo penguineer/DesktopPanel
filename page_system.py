@@ -6,19 +6,23 @@ from kivy.properties import ObjectProperty
 
 import globalcontent
 from operational_event_controller import OperationalEventController
-from operational_events import SyslogEvent
+from operational_events import JarvisAlertEvent, SyslogEvent
 
 def _notification_for_operational_events(events):
     """Return the notification level warranted by newly added events."""
 
     level = "None"
     for event in events:
-        if not isinstance(event, SyslogEvent):
+        if not isinstance(event, (SyslogEvent, JarvisAlertEvent)):
             continue
         if event.severity in ("critical", "crit", "alert", "emergency", "emerg"):
             return "Critical"
-        if event.severity in ("error", "err"):
-            level = "Warning"
+        if event.severity in ("error", "err", "warning", "warn"):
+            level = "Warning" if isinstance(event, JarvisAlertEvent) else level
+            if isinstance(event, SyslogEvent) and event.severity in ("error", "err"):
+                level = "Warning"
+            elif isinstance(event, SyslogEvent) and level == "None":
+                level = "Info"
         elif level == "None":
             level = "Info"
     return level
@@ -52,6 +56,7 @@ Builder.load_string("""
             id: operational_event_panel
             size_hint_x: 0.5
             store: root.operational_store
+            jarvis_store: root.jarvis_store
 
         BoxLayout:
             orientation: 'vertical'
@@ -98,6 +103,7 @@ class SystemPage(globalcontent.ContentPage):
     amqp_widget = ObjectProperty(None, allownone=True)
     influxdb_widget = ObjectProperty(None, allownone=True)
     operational_store = ObjectProperty(None, allownone=True)
+    jarvis_store = ObjectProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         self._operational_events = OperationalEventController(
@@ -105,7 +111,8 @@ class SystemPage(globalcontent.ContentPage):
             on_failure=self._schedule_operational_failure,
         )
         super().__init__(**kwargs)
-        self.operational_store = self._operational_events.store
+        self.operational_store = self._operational_events.loki_store
+        self.jarvis_store = self._operational_events.jarvis_store
 
     def on_conf(self, _instance, conf):
         operational_conf = (conf or {}).get("operational_events")
