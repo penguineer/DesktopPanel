@@ -43,6 +43,27 @@ def parse_iso8601_duration(value) -> float:
     return duration.total_seconds()
 
 
+def humanize_duration_millis(millis, elements=2):
+    """Format milliseconds using the same compact units as HumanizedDurationLabel."""
+
+    amount = int(millis / 1000)
+    partitions = []
+    for i in range(len(NAMES) - 1, -1, -1):
+        value = amount // INTERVALS[i]
+        name = NAMES[i][1] if value == 0 else NAMES[i][1 % value]
+        partitions.append((value, name))
+        amount -= value * INTERVALS[i]
+
+    idx = next(
+        (i for i, item in enumerate(partitions) if item[0] != 0),
+        len(partitions) - 1,
+    )
+    return " ".join(
+        "%d%s" % (item[0], item[1])
+        for item in partitions[idx:idx + elements]
+    )
+
+
 class HumanizedDurationLabel(Label):
     """ Show a label with N consecutive duration parts, such as `1h 5m` """
 
@@ -121,12 +142,7 @@ class HumanizedDurationLabel(Label):
         self._partitions = partitions
 
     def on__partitions(self, _instance, _value):
-        # find first non-zero or last as fall-back
-        idx = next(
-            (i for i, x in enumerate(self._partitions) if x[0] != 0),
-            len(self._partitions) - 1)
-
-        # join the next N-1 elements
-        self.text = " ".join(
-            map(lambda e: "%d%s" % (e[0], e[1]),
-                self._partitions[idx:idx + self.elements]))
+        self.text = humanize_duration_millis(
+            self.duration_millis,
+            elements=self.elements,
+        )

@@ -16,8 +16,9 @@ from kivy.properties import (
 )
 from kivy.uix.boxlayout import BoxLayout
 
-from operational_events import SourceStateEvent, SyslogEvent
+from operational_events import JarvisAlertEvent, SourceStateEvent, SyslogEvent
 from scrollable_list import ScrollableList  # noqa: F401 - used by KV
+from timewidget import humanize_duration_millis
 
 
 class Colors:
@@ -57,7 +58,9 @@ def _formatted_timestamp(timestamp_ns):
 def _event_color(event):
     if isinstance(event, SourceStateEvent):
         return Colors.COLOR_RED
-    if isinstance(event, SyslogEvent):
+    if isinstance(event, JarvisAlertEvent) and event.status == "resolved":
+        return Colors.COLOR_GREY
+    if isinstance(event, (SyslogEvent, JarvisAlertEvent)):
         if event.severity in _CRITICAL_SEVERITIES:
             return Colors.COLOR_RED
         if event.severity in _ERROR_SEVERITIES:
@@ -68,9 +71,60 @@ def _event_color(event):
 def _event_details(event):
     if isinstance(event, SyslogEvent):
         return json.dumps(dict(event.labels), sort_keys=True, indent=2, ensure_ascii=False)
+    if isinstance(event, JarvisAlertEvent):
+        payload = {
+            "cluster": event.cluster_name,
+            "fingerprint": event.fingerprint,
+            "status": event.status,
+            "startsAt": event.starts_at,
+            "resolvedAt": event.resolved_at,
+            "stale": event.stale,
+            "labels": dict(event.labels),
+            "annotations": dict(event.annotations),
+        }
+        return json.dumps(payload, sort_keys=True, indent=2, ensure_ascii=False)
     if isinstance(event, SourceStateEvent):
         return "source: %s\nstate: %s" % (event.source, event.state)
     return "source: %s" % event.source
+
+
+def _combined_operational_events(loki_events, jarvis_events):
+    """Return health, actionable Jarvis, then the chronological timeline."""
+
+    source_states = [
+        event
+        for event in list(loki_events) + list(jarvis_events)
+        if isinstance(event, SourceStateEvent)
+    ]
+    source_rank = {"loki": 0, "jarvis": 1}
+    source_states.sort(
+        key=lambda event: (
+            source_rank.get(event.source, len(source_rank)),
+            event.source,
+            event.event_id,
+        )
+    )
+
+    active_jarvis = sorted(
+        (
+            event
+            for event in jarvis_events
+            if isinstance(event, JarvisAlertEvent) and event.needs_attention
+        ),
+        key=lambda event: (-event.starts_at_ns, event.event_id),
+    )
+
+    timeline = [
+        event
+        for event in list(loki_events) + list(jarvis_events)
+        if not isinstance(event, SourceStateEvent)
+        and not (
+            isinstance(event, JarvisAlertEvent)
+            and event.needs_attention
+        )
+    ]
+    timeline.sort(key=lambda event: (-event.timestamp_ns, event.event_id))
+    return source_states + active_jarvis + timeline
 
 
 def _entry_height(summary, details="", expanded=False):
@@ -218,14 +272,17 @@ class OperationalEventRow(BoxLayout):
 
 
 class OperationalEventPanel(BoxLayout):
-    """RecycleView-backed presentation of an OperationalEventStore."""
+    """Combined presentation of independent Loki and Jarvis event stores."""
 
     entries = ListProperty([])
     store = ObjectProperty(None, allownone=True)
+    jarvis_store = ObjectProperty(None, allownone=True)
     border_color = ColorProperty(Colors.COLOR_GREY)
 
     def __init__(self, **kwargs):
         self._bound_store = None
+        self._bound_jarvis_store = None
+        self._age_clock = None
         super().__init__(**kwargs)
 
     def on_kv_post(self, _base_widget):
@@ -240,23 +297,64 @@ class OperationalEventPanel(BoxLayout):
             store.bind(events=self._on_store_events)
         self._refresh_entries()
 
+    def on_jarvis_store(self, _instance, store):
+        if self._bound_jarvis_store is not None:
+            self._bound_jarvis_store.unbind(events=self._on_store_events)
+        self._bound_jarvis_store = store
+        if store is not None:
+            store.bind(events=self._on_store_events)
+        self._refresh_entries()
+
     def _on_store_events(self, _store, _events):
         self._refresh_entries()
 
-    def _toggle_expanded(self, event_id):
-        if self.store is None:
+    def _store_for_event(self, event):
+        if isinstance(event, JarvisAlertEvent):
+            return self.jarvis_store
+        if isinstance(event, SourceStateEvent) and event.source == "jarvis":
+            return self.jarvis_store
+        return self.store
+
+    def _toggle_expanded(self, event):
+        store = self._store_for_event(event)
+        if store is None:
             return
-        self.store.toggle_expanded(event_id)
+        store.toggle_expanded(event.event_id)
         self._refresh_entries()
 
+    def _combined_events(self):
+        loki_events = list(self.store.events) if self.store is not None else []
+        jarvis_events = (
+            list(self.jarvis_store.events)
+            if self.jarvis_store is not None
+            else []
+        )
+        return _combined_operational_events(loki_events, jarvis_events)
+
     def _refresh_entries(self):
-        if self.store is None or not self.ids:
+        if not self.ids:
             self.entries = []
             return
 
+        events = self._combined_events()
+        has_active_jarvis = any(
+            isinstance(event, JarvisAlertEvent) and event.needs_attention
+            for event in events
+        )
+        if has_active_jarvis and self._age_clock is None:
+            self._age_clock = Clock.schedule_interval(
+                lambda _dt: self._refresh_entries(),
+                1,
+            )
+        elif not has_active_jarvis and self._age_clock is not None:
+            self._age_clock.cancel()
+            self._age_clock = None
+
         data = []
-        for event in self.store.events:
-            expanded = self.store.is_expanded(event.event_id)
+        now_ns = int(datetime.datetime.now().timestamp() * 1_000_000_000)
+        for event in events:
+            store = self._store_for_event(event)
+            expanded = store.is_expanded(event.event_id) if store is not None else False
             details = _event_details(event)
             summary_lines = _wrapped_lines(event.summary)
             detail_lines = _wrapped_lines(details) if expanded else 0
@@ -267,15 +365,30 @@ class OperationalEventPanel(BoxLayout):
                     event.facility,
                     event.severity,
                 )
+                event_time = _formatted_timestamp(event.timestamp_ns)
+            elif isinstance(event, JarvisAlertEvent):
+                stale = " · stale" if event.stale else ""
+                meta_text = "%s · %s%s" % (
+                    event.status,
+                    event.severity or "unknown",
+                    stale,
+                )
+                if event.needs_attention:
+                    age_millis = max(0, (now_ns - event.starts_at_ns) // 1_000_000)
+                    event_time = humanize_duration_millis(age_millis)
+                else:
+                    event_time = _formatted_timestamp(event.timestamp_ns)
             elif isinstance(event, SourceStateEvent):
                 meta_text = event.state
+                event_time = _formatted_timestamp(event.timestamp_ns)
             else:
                 meta_text = event.source
+                event_time = _formatted_timestamp(event.timestamp_ns)
 
             data.append({
                 "size_hint": [1, None],
                 "height": _entry_height(event.summary, details, expanded),
-                "event_time": _formatted_timestamp(event.timestamp_ns),
+                "event_time": event_time,
                 "source_annotation": event.source_annotation,
                 "meta_text": meta_text,
                 "summary": event.summary,
@@ -287,7 +400,7 @@ class OperationalEventPanel(BoxLayout):
                 "expanded": expanded,
                 "tap_callback": functools.partial(
                     self._toggle_expanded,
-                    event.event_id,
+                    event,
                 ),
             })
 
