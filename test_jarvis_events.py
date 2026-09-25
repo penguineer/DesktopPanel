@@ -6,6 +6,7 @@ import pytest
 
 from jarvis_events import (
     JarvisBudgetError,
+    JarvisClient,
     JarvisEventSource,
     JarvisSync,
     _iso_to_ns,
@@ -94,6 +95,21 @@ class _FakeClient:
         if budget is not None:
             budget.consume_page(len(history))
         return history
+
+
+class TestJarvisClientBounds:
+    def test_declared_oversized_response_is_rejected_before_reading(self):
+        class Response:
+            content_length = 11
+
+        client = JarvisClient(
+            "https://jarvis.example",
+            max_response_bytes=10,
+            session=object(),
+        )
+
+        with pytest.raises(JarvisBudgetError, match="response-size"):
+            asyncio.run(client._read_bounded_body(Response()))
 
 
 class TestJarvisSync:
