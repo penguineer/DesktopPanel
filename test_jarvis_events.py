@@ -356,3 +356,73 @@ class TestJarvisEventSource:
 
         assert not any(isinstance(item, JarvisAlertEvent) for item in store.events)
         assert failures == [("unreachable", "Jarvis unavailable")]
+
+
+class _OneChangeClient:
+    async def changes(self):
+        yield {"type": "alerts_update"}
+
+
+class _ContextClient:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        return False
+
+    async def changes(self):
+        while True:
+            await asyncio.sleep(3600)
+            yield {}
+
+
+class _CountingSync:
+    def __init__(self, snapshots_before_stop=2):
+        self.calls = 0
+        self.snapshots_before_stop = snapshots_before_stop
+
+    async def snapshot(self, _client, _boundary_ns):
+        self.calls += 1
+        if self.calls > self.snapshots_before_stop:
+            raise asyncio.CancelledError
+        return []
+
+
+class TestJarvisScheduling:
+    def test_websocket_message_invalidates_http_snapshot(self):
+        async def stop_sleep(_seconds):
+            raise asyncio.CancelledError
+
+        source = JarvisEventSource(
+            lambda: None,
+            JarvisEventStore(),
+            sleep=stop_sleep,
+        )
+
+        async def run_watch():
+            invalidated = asyncio.Event()
+            try:
+                await source._watch_changes(_OneChangeClient(), invalidated)
+            except asyncio.CancelledError:
+                pass
+            return invalidated.is_set()
+
+        assert asyncio.run(run_watch()) is True
+
+    def test_periodic_poll_reconciles_without_websocket_messages(self):
+        source = JarvisEventSource(
+            lambda: _ContextClient(),
+            JarvisEventStore(),
+            poll_seconds=0.001,
+            disconnected_poll_seconds=0.001,
+        )
+        sync = _CountingSync(snapshots_before_stop=2)
+        source.sync = sync
+
+        try:
+            asyncio.run(source.run())
+        except asyncio.CancelledError:
+            pass
+
+        assert sync.calls == 3
+
