@@ -348,6 +348,10 @@ class JarvisEventStore(EventDispatcher):
             raise ValueError("Operational event history duration must be greater than zero")
         self.history_seconds = seconds
 
+    @property
+    def has_alerts(self):
+        return bool(self._alerts)
+
     def reconcile(self, incoming):
         """Replace the authoritative visible Jarvis snapshot.
 
