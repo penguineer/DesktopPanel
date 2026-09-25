@@ -372,7 +372,7 @@ class TestLokiEventSource:
             lambda: None,
             store,
             on_failure=lambda state, message: failures.append((state, message)),
-            time_ns=iter([10, 20, 30]).__next__,
+            time_ns=iter([10, 20, 30, 40]).__next__,
         )
 
         source._set_degraded("disconnected", "down")
