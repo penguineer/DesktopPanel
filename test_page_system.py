@@ -1,7 +1,11 @@
 """ Pytest tests for the System page operational-event policy """
 
 from operational_events import LokiEntry, SyslogEvent
-from page_system import _higher_notification, _notification_for_operational_events
+from page_system import (
+    _higher_notification,
+    _notification_for_operational_events,
+    _notification_for_operational_failure,
+)
 
 
 def _event(severity):
@@ -39,3 +43,7 @@ class TestSystemPageOperationalNotifications:
 
     def test_notification_escalates(self):
         assert _higher_notification("Info", "Warning") == "Warning"
+
+
+def test_operational_failure_maps_to_critical():
+    assert _notification_for_operational_failure() == "Critical"
