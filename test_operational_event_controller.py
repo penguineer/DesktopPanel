@@ -13,13 +13,14 @@ class _FakeSource:
         store,
         on_new_events=None,
         on_failure=None,
-        notify_initial_history=False,
+        recovery_after_ns=None,
     ):
         self.client_factory = client_factory
         self.store = store
         self.on_new_events = on_new_events
         self.on_failure = on_failure
-        self.notify_initial_history = notify_initial_history
+        self.recovery_after_ns = recovery_after_ns
+        self.history_covered_through_ns = recovery_after_ns
         self.started = False
         self.torn_down = False
         self.__class__.instances.append(self)
@@ -78,7 +79,7 @@ class TestOperationalEventController:
         assert len(_FakeSource.instances) == 1
         assert _FakeSource.instances[0].torn_down is False
 
-    def test_restarted_source_notifies_recovered_history(self, monkeypatch):
+    def test_restarted_source_receives_previous_coverage_boundary(self, monkeypatch):
         monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
         controller = OperationalEventController()
 
@@ -89,17 +90,20 @@ class TestOperationalEventController:
                 "password": "first",
             },
         })
-        assert _FakeSource.instances[0].notify_initial_history is False
+        first = _FakeSource.instances[0]
+        assert first.recovery_after_ns is None
 
+        first.history_covered_through_ns = 123456789
         controller.update_config({
+            "history_duration": "PT48H",
             "loki": {
                 "url": "https://loki.example",
                 "user": "desktop-panel",
-                "password": "second",
+                "password": "first",
             },
         })
 
-        assert _FakeSource.instances[1].notify_initial_history is True
+        assert _FakeSource.instances[1].recovery_after_ns == 123456789
 
     def test_changed_config_restarts_source(self, monkeypatch):
         monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
