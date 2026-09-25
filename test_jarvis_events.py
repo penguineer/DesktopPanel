@@ -172,6 +172,43 @@ class TestJarvisSync:
         assert len({event.event_id for event in events}) == 2
         assert {event.starts_at for event in events} == {first_start, second_start}
 
+    def test_suppressed_occurrence_does_not_reappear_when_resolved(self):
+        resolved = [_alert(
+            state="resolved",
+            ends_at="2026-09-25T22:05:00Z",
+        )]
+        history = [
+            _history(
+                3,
+                "resolved",
+                recorded_at="2026-09-25T22:05:00Z",
+            ),
+            _history(
+                2,
+                "suppressed",
+                recorded_at="2026-09-25T22:02:00Z",
+            ),
+            _history(
+                1,
+                "firing",
+                recorded_at="2026-09-25T22:00:10Z",
+            ),
+        ]
+        client = _FakeClient(
+            [],
+            resolved,
+            {("example", "abc"): history},
+        )
+
+        events = asyncio.run(JarvisSync(
+            JarvisEventStore(history_duration="PT24H")
+        ).snapshot(
+            client,
+            _iso_to_ns("2026-09-26T00:00:00Z"),
+        ))
+
+        assert events == []
+
     def test_mutable_payload_does_not_change_occurrence_identity(self):
         store = JarvisEventStore()
         starts_ns = _iso_to_ns("2026-09-25T22:00:00Z")
