@@ -67,10 +67,10 @@ class TestSystemPageOperationalNotifications:
             [_jarvis_event("critical")]
         ) == "Critical"
 
-    def test_resolved_jarvis_transition_can_notify(self):
+    def test_resolved_jarvis_transition_does_not_notify(self):
         assert _notification_for_operational_events(
             [_jarvis_event("warning", status="resolved")]
-        ) == "Warning"
+        ) == "None"
 
     def test_notification_does_not_downgrade(self):
         assert _higher_notification("Critical", "Warning") == "Critical"
