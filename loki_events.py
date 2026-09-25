@@ -375,6 +375,10 @@ class LokiEventSource:
     def running(self):
         return self._task is not None and not self._task.done()
 
+    @property
+    def history_covered_through_ns(self):
+        return self.sync.history_covered_through_ns
+
     def start(self):
         """Start the source on the current asyncio event loop."""
 
