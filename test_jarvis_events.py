@@ -2,7 +2,14 @@
 
 import asyncio
 
-from jarvis_events import JarvisEventSource, JarvisSync, _iso_to_ns
+import pytest
+
+from jarvis_events import (
+    JarvisBudgetError,
+    JarvisEventSource,
+    JarvisSync,
+    _iso_to_ns,
+)
 from operational_events import JarvisAlertEvent, JarvisEventStore
 
 
@@ -74,9 +81,19 @@ class _FakeClient:
     async def get_alerts(self, *, state=None):
         return self.resolved if state == "resolved" else self.current
 
-    async def get_history(self, fingerprint, cluster_name, *, cutoff_ns):
+    async def get_history(
+        self,
+        fingerprint,
+        cluster_name,
+        *,
+        cutoff_ns,
+        budget=None,
+    ):
         self.history_calls.append((cluster_name, fingerprint, cutoff_ns))
-        return self.histories[(cluster_name, fingerprint)]
+        history = self.histories[(cluster_name, fingerprint)]
+        if budget is not None:
+            budget.consume_page(len(history))
+        return history
 
 
 class TestJarvisSync:
@@ -208,6 +225,55 @@ class TestJarvisSync:
         ))
 
         assert events == []
+
+    def test_reconciliation_history_budget_is_global(self):
+        first = _alert(
+            fingerprint="first",
+            starts_at="2026-09-25T20:00:00Z",
+            state="resolved",
+            ends_at="2026-09-25T20:05:00Z",
+        )
+        second = _alert(
+            fingerprint="second",
+            starts_at="2026-09-25T21:00:00Z",
+            state="resolved",
+            ends_at="2026-09-25T21:05:00Z",
+        )
+        client = _FakeClient(
+            [],
+            [first, second],
+            {
+                ("example", "first"): [
+                    _history(
+                        1,
+                        "resolved",
+                        fingerprint="first",
+                        starts_at="2026-09-25T20:00:00Z",
+                        recorded_at="2026-09-25T20:05:00Z",
+                    ),
+                ],
+                ("example", "second"): [
+                    _history(
+                        2,
+                        "resolved",
+                        fingerprint="second",
+                        starts_at="2026-09-25T21:00:00Z",
+                        recorded_at="2026-09-25T21:05:00Z",
+                    ),
+                ],
+            },
+        )
+        sync = JarvisSync(
+            JarvisEventStore(history_duration="PT24H"),
+            max_history_rows=1,
+            max_history_pages=10,
+        )
+
+        with pytest.raises(JarvisBudgetError, match="history row"):
+            asyncio.run(sync.snapshot(
+                client,
+                _iso_to_ns("2026-09-26T00:00:00Z"),
+            ))
 
     def test_mutable_payload_does_not_change_occurrence_identity(self):
         store = JarvisEventStore()
@@ -342,6 +408,42 @@ class TestJarvisEventSource:
         asyncio.run(source._reconcile(object()))
         assert notifications == [[resolved]]
 
+    def test_recreated_source_marks_retained_state_stale_on_first_failure(self):
+        starts_ns = _iso_to_ns("2026-09-25T22:00:00Z")
+        event = JarvisAlertEvent(
+            event_id="stable",
+            timestamp_ns=starts_ns,
+            source="jarvis",
+            source_annotation="host-a",
+            summary="active",
+            cluster_name="example",
+            fingerprint="abc",
+            starts_at="2026-09-25T22:00:00Z",
+            starts_at_ns=starts_ns,
+            resolved_at=None,
+            status="active",
+            severity="warning",
+            labels={},
+            annotations={},
+        )
+        store = JarvisEventStore()
+        store.reconcile([event])
+        source = JarvisEventSource(
+            lambda: None,
+            store,
+            has_previous_state=True,
+            time_ns=lambda: 123,
+        )
+
+        source._set_degraded("unreachable", "Jarvis unavailable")
+
+        retained = next(
+            item for item in store.events
+            if isinstance(item, JarvisAlertEvent)
+        )
+        assert retained.event_id == "stable"
+        assert retained.stale is True
+
     def test_failure_before_first_success_does_not_invent_alerts(self):
         failures = []
         store = JarvisEventStore()
@@ -408,6 +510,56 @@ class TestJarvisScheduling:
             return invalidated.is_set()
 
         assert asyncio.run(run_watch()) is True
+
+    def test_websocket_invalidation_during_reconcile_is_not_lost(self):
+        class RaceClient:
+            def __init__(self):
+                self.sync_started = asyncio.Event()
+                self.ws_delivered = asyncio.Event()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return False
+
+            async def changes(self):
+                await self.sync_started.wait()
+                yield {"type": "alerts_update"}
+                self.ws_delivered.set()
+                while True:
+                    await asyncio.sleep(3600)
+
+        class RaceSync:
+            def __init__(self):
+                self.calls = 0
+
+            async def snapshot(self, client, _boundary_ns):
+                self.calls += 1
+                if self.calls == 1:
+                    client.sync_started.set()
+                    await client.ws_delivered.wait()
+                    return []
+                raise asyncio.CancelledError
+
+        client = RaceClient()
+        source = JarvisEventSource(
+            lambda: client,
+            JarvisEventStore(),
+            poll_seconds=10,
+        )
+        sync = RaceSync()
+        source.sync = sync
+
+        async def run_source():
+            try:
+                await asyncio.wait_for(source.run(), timeout=0.25)
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.run(run_source())
+
+        assert sync.calls == 2
 
     def test_periodic_poll_reconciles_without_websocket_messages(self):
         source = JarvisEventSource(
