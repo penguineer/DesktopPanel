@@ -17,7 +17,7 @@ class OperationalEventController(object):
         self._on_failure = on_failure
         self._source = None
         self._config_key = None
-        self._had_source = False
+        self._history_covered_through_ns = None
 
     def update_config(self, config):
         """Apply a system.operational_events configuration dictionary."""
@@ -64,9 +64,8 @@ class OperationalEventController(object):
             self.store,
             on_new_events=self._on_new_events,
             on_failure=self._on_failure,
-            notify_initial_history=self._had_source,
+            recovery_after_ns=self._history_covered_through_ns,
         )
-        self._had_source = True
         self._source.start()
 
     def _configuration_error(self, message, exc=None):
@@ -86,5 +85,12 @@ class OperationalEventController(object):
 
     def teardown(self):
         if self._source is not None:
+            coverage = getattr(
+                self._source,
+                "history_covered_through_ns",
+                None,
+            )
+            if coverage is not None:
+                self._history_covered_through_ns = coverage
             self._source.teardown()
             self._source = None
