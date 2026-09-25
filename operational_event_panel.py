@@ -86,6 +86,45 @@ def _event_details(event):
     return "source: %s" % event.source
 
 
+def _combined_operational_events(loki_events, jarvis_events):
+    """Return health, actionable Jarvis, then the chronological timeline."""
+
+    source_states = [
+        event
+        for event in list(loki_events) + list(jarvis_events)
+        if isinstance(event, SourceStateEvent)
+    ]
+    source_rank = {"loki": 0, "jarvis": 1}
+    source_states.sort(
+        key=lambda event: (
+            source_rank.get(event.source, len(source_rank)),
+            event.source,
+            event.event_id,
+        )
+    )
+
+    active_jarvis = sorted(
+        (
+            event
+            for event in jarvis_events
+            if isinstance(event, JarvisAlertEvent) and event.needs_attention
+        ),
+        key=lambda event: (-event.starts_at_ns, event.event_id),
+    )
+
+    timeline = [
+        event
+        for event in list(loki_events) + list(jarvis_events)
+        if not isinstance(event, SourceStateEvent)
+        and not (
+            isinstance(event, JarvisAlertEvent)
+            and event.needs_attention
+        )
+    ]
+    timeline.sort(key=lambda event: (-event.timestamp_ns, event.event_id))
+    return source_states + active_jarvis + timeline
+
+
 def _entry_height(summary, details="", expanded=False):
     summary_height = _wrapped_lines(summary) * _ENTRY_LINE_HEIGHT
     height = _ENTRY_PADDING_V + _ENTRY_META_HEIGHT + _ENTRY_SPACING + summary_height
@@ -288,41 +327,7 @@ class OperationalEventPanel(BoxLayout):
             if self.jarvis_store is not None
             else []
         )
-
-        source_states = [
-            event
-            for event in loki_events + jarvis_events
-            if isinstance(event, SourceStateEvent)
-        ]
-        source_rank = {"loki": 0, "jarvis": 1}
-        source_states.sort(
-            key=lambda event: (
-                source_rank.get(event.source, len(source_rank)),
-                event.source,
-                event.event_id,
-            )
-        )
-
-        active_jarvis = sorted(
-            (
-                event
-                for event in jarvis_events
-                if isinstance(event, JarvisAlertEvent) and event.needs_attention
-            ),
-            key=lambda event: (-event.starts_at_ns, event.event_id),
-        )
-
-        timeline = [
-            event
-            for event in loki_events + jarvis_events
-            if not isinstance(event, SourceStateEvent)
-            and not (
-                isinstance(event, JarvisAlertEvent)
-                and event.needs_attention
-            )
-        ]
-        timeline.sort(key=lambda event: (-event.timestamp_ns, event.event_id))
-        return source_states + active_jarvis + timeline
+        return _combined_operational_events(loki_events, jarvis_events)
 
     def _refresh_entries(self):
         if not self.ids:
