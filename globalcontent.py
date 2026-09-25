@@ -1,7 +1,5 @@
 import time
 
-import isodate
-
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.event import EventDispatcher
@@ -17,25 +15,18 @@ from kivy.uix.button import Button
 from kivy.animation import Animation
 from kivy.graphics import Color, Rectangle, RoundedRectangle, Line, InstructionGroup
 
+from timewidget import parse_iso8601_duration
+
 
 def _parse_nav_ttl(value) -> float:
     """Parse a navigation TTL value to seconds.
 
-    Accepts:
-
-    * A number — interpreted as **minutes** and converted to seconds.
-    * An ISO 8601 duration string (e.g. ``"PT1H"``, ``"PT30M"``,
-      ``"PT1H30M"``) — parsed via :mod:`isodate` and converted to seconds.
-
-    :raises ValueError: if the value cannot be parsed.
+    Numeric values retain the historical navigation convention of minutes.
+    String values must be ISO 8601 durations.
     """
     if isinstance(value, (int, float)):
         return float(value) * 60.0
-    try:
-        duration = isodate.parse_duration(str(value))
-        return duration.total_seconds()
-    except isodate.isoerror.ISO8601Error as e:
-        raise ValueError(f"Cannot parse navigation TTL value: {value!r}") from e
+    return parse_iso8601_duration(value)
 
 
 class PageRouter(EventDispatcher):
