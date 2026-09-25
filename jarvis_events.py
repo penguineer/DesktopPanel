@@ -27,6 +27,29 @@ class JarvisProtocolError(JarvisError):
     """Raised when Jarvis returns an unexpected response shape."""
 
 
+class JarvisBudgetError(JarvisError):
+    """Raised when a defensive Jarvis reconciliation budget is exhausted."""
+
+
+class _HistoryBudget:
+    def __init__(self, *, max_rows, max_pages):
+        self.remaining_rows = max_rows
+        self.remaining_pages = max_pages
+
+    def consume_page(self, row_count):
+        if self.remaining_pages <= 0:
+            raise JarvisBudgetError(
+                "Jarvis reconciliation exceeds the defensive history page limit"
+            )
+        self.remaining_pages -= 1
+
+        if row_count > self.remaining_rows:
+            raise JarvisBudgetError(
+                "Jarvis reconciliation exceeds the defensive history row limit"
+            )
+        self.remaining_rows -= row_count
+
+
 def _iso_to_ns(value):
     if not isinstance(value, str) or not value:
         raise JarvisProtocolError("Jarvis timestamp is missing")
@@ -116,15 +139,19 @@ class JarvisClient:
         *,
         history_page_size=100,
         max_history_events=20000,
+        max_response_bytes=2 * 1024 * 1024,
         session=None,
     ):
         if history_page_size <= 0 or history_page_size > 100:
             raise ValueError("history_page_size must be between 1 and 100")
         if max_history_events <= 0:
             raise ValueError("max_history_events must be greater than zero")
+        if max_response_bytes <= 0:
+            raise ValueError("max_response_bytes must be greater than zero")
         self.base_url = base_url.rstrip("/")
         self.history_page_size = history_page_size
         self.max_history_events = max_history_events
+        self.max_response_bytes = max_response_bytes
         self._session = session
         self._owns_session = session is None
 
@@ -146,16 +173,43 @@ class JarvisClient:
             raise RuntimeError("JarvisClient must be entered before use")
         return self._session
 
+    async def _read_bounded_body(self, response):
+        content_length = response.content_length
+        if (
+            content_length is not None
+            and content_length > self.max_response_bytes
+        ):
+            raise JarvisBudgetError(
+                "Jarvis response exceeds the defensive response-size limit"
+            )
+
+        chunks = []
+        size = 0
+        async for chunk in response.content.iter_chunked(64 * 1024):
+            size += len(chunk)
+            if size > self.max_response_bytes:
+                raise JarvisBudgetError(
+                    "Jarvis response exceeds the defensive response-size limit"
+                )
+            chunks.append(chunk)
+        return b"".join(chunks)
+
     async def _get_json(self, path, *, params=None):
         session = self._require_session()
         try:
             async with session.get(self.base_url + path, params=params) as response:
+                body = await self._read_bounded_body(response)
                 if response.status != 200:
-                    body = await response.text()
+                    text = body[:200].decode("utf-8", errors="replace")
                     raise JarvisError(
-                        f"Jarvis request failed with HTTP {response.status}: {body[:200]}"
+                        f"Jarvis request failed with HTTP {response.status}: {text}"
                     )
-                payload = await response.json()
+                try:
+                    payload = json.loads(body)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise JarvisProtocolError(
+                        "Jarvis response is not valid JSON"
+                    ) from exc
         except aiohttp.ClientError as exc:
             raise JarvisError(f"Jarvis request failed: {exc}") from exc
         return payload
@@ -167,7 +221,14 @@ class JarvisClient:
             raise JarvisProtocolError("Jarvis alerts response is not a list")
         return payload
 
-    async def get_history(self, fingerprint, cluster_name, *, cutoff_ns):
+    async def get_history(
+        self,
+        fingerprint,
+        cluster_name,
+        *,
+        cutoff_ns,
+        budget=None,
+    ):
         """Fetch newest history pages until the visible cutoff has been crossed."""
 
         offset = 0
@@ -189,9 +250,14 @@ class JarvisClient:
             if not isinstance(page, list) or not isinstance(total, int):
                 raise JarvisProtocolError("Jarvis history response is missing events/total")
 
+            if budget is not None:
+                budget.consume_page(len(page))
+
             events.extend(page)
             if len(events) > self.max_history_events:
-                raise JarvisError("Jarvis history exceeds the defensive event limit")
+                raise JarvisBudgetError(
+                    "Jarvis history exceeds the defensive per-alert event limit"
+                )
 
             if not page or offset + len(page) >= total:
                 break
@@ -242,8 +308,24 @@ class JarvisClient:
 class JarvisSync:
     """Build an authoritative visible occurrence snapshot from Jarvis."""
 
-    def __init__(self, store: JarvisEventStore):
+    def __init__(
+        self,
+        store: JarvisEventStore,
+        *,
+        max_logical_alerts=1000,
+        max_history_rows=20000,
+        max_history_pages=200,
+    ):
+        if max_logical_alerts <= 0:
+            raise ValueError("max_logical_alerts must be greater than zero")
+        if max_history_rows <= 0:
+            raise ValueError("max_history_rows must be greater than zero")
+        if max_history_pages <= 0:
+            raise ValueError("max_history_pages must be greater than zero")
         self.store = store
+        self.max_logical_alerts = max_logical_alerts
+        self.max_history_rows = max_history_rows
+        self.max_history_pages = max_history_pages
 
     @property
     def history_window_ns(self):
@@ -274,11 +356,16 @@ class JarvisSync:
                 resolved_by_key[_logical_key(alert)] = alert
 
         keys = set(current_by_key) | set(resolved_by_key)
-        if len(keys) > self.store.max_events:
-            raise OperationalEventCapacityError(
-                "Jarvis logical alert set exceeds the defensive in-memory entry limit"
+        logical_limit = min(self.store.max_events, self.max_logical_alerts)
+        if len(keys) > logical_limit:
+            raise JarvisBudgetError(
+                "Jarvis logical alert set exceeds the defensive reconciliation limit"
             )
 
+        history_budget = _HistoryBudget(
+            max_rows=self.max_history_rows,
+            max_pages=self.max_history_pages,
+        )
         visible = {}
         for key in sorted(keys):
             cluster_name, fingerprint = key
@@ -287,6 +374,7 @@ class JarvisSync:
                 fingerprint,
                 cluster_name,
                 cutoff_ns=cutoff_ns,
+                budget=history_budget,
             )
             for event in self._events_for_key(
                 key,
@@ -444,6 +532,7 @@ class JarvisEventSource:
         poll_seconds=300,
         disconnected_poll_seconds=30,
         reconnect_seconds=5,
+        has_previous_state=False,
         time_ns=time.time_ns,
         sleep=asyncio.sleep,
     ):
@@ -459,7 +548,7 @@ class JarvisEventSource:
         self._sleep = sleep
         self._task = None
         self._failure_active = False
-        self._has_success = False
+        self._has_success = bool(has_previous_state)
 
     @property
     def running(self):
@@ -529,6 +618,7 @@ class JarvisEventSource:
                     watcher = asyncio.create_task(self._watch_changes(client, invalidated))
                     try:
                         while True:
+                            invalidated.clear()
                             try:
                                 await self._reconcile(client)
                             except asyncio.CancelledError:
@@ -543,7 +633,6 @@ class JarvisEventSource:
                                     "Jarvis alert state is unavailable; showing stale data",
                                 )
 
-                            invalidated.clear()
                             timeout = (
                                 self.poll_seconds
                                 if not self._failure_active
