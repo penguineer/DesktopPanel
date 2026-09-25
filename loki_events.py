@@ -1,7 +1,9 @@
 """Async Loki transport and history/tail synchronization helpers."""
 
+import asyncio
 from dataclasses import dataclass
 import json
+import time
 from typing import Iterable, Optional
 from urllib.parse import urlsplit, urlunsplit
 
@@ -320,3 +322,244 @@ class LokiSync:
         added = self.merge_entries(batch.entries, boundary_ns=boundary_ns)
         catchup_required = bool(batch.dropped_entries)
         return added, catchup_required
+
+
+
+class LokiEventSource:
+    """Long-running tail-first Loki source with reconnect and catch-up."""
+
+    def __init__(
+        self,
+        client_factory,
+        store: OperationalEventStore,
+        *,
+        on_new_events=None,
+        on_failure=None,
+        overlap_seconds=5,
+        reconnect_initial_seconds=1,
+        reconnect_max_seconds=30,
+        time_ns=time.time_ns,
+        sleep=asyncio.sleep,
+    ):
+        if reconnect_initial_seconds <= 0:
+            raise ValueError("reconnect_initial_seconds must be greater than zero")
+        if reconnect_max_seconds < reconnect_initial_seconds:
+            raise ValueError("reconnect_max_seconds must not be smaller than initial")
+
+        self.client_factory = client_factory
+        self.store = store
+        self.sync = LokiSync(store, overlap_seconds=overlap_seconds)
+        self.on_new_events = on_new_events
+        self.on_failure = on_failure
+        self.reconnect_initial_seconds = reconnect_initial_seconds
+        self.reconnect_max_seconds = reconnect_max_seconds
+        self._time_ns = time_ns
+        self._sleep = sleep
+        self._task = None
+        self._failure_active = False
+        self._started_once = False
+
+    @property
+    def running(self):
+        return self._task is not None and not self._task.done()
+
+    def start(self):
+        """Start the source on the current asyncio event loop."""
+
+        if self.running:
+            return self._task
+        self._task = asyncio.create_task(self.run())
+        return self._task
+
+    def teardown(self):
+        """Cancel the source task without requiring an async Kivy on_stop."""
+
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+
+    async def wait_stopped(self):
+        """Wait for a started source to finish cancellation."""
+
+        if self._task is None:
+            return
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+
+    def _set_degraded(self, state, message):
+        timestamp_ns = self._time_ns()
+        self.store.set_source_state(
+            "loki",
+            state,
+            message,
+            timestamp_ns=timestamp_ns,
+        )
+        if not self._failure_active:
+            self._failure_active = True
+            if self.on_failure is not None:
+                self.on_failure(state, message)
+
+    def _set_healthy(self):
+        self.store.clear_source_state("loki")
+        self._failure_active = False
+
+    def _notify_events(self, events):
+        if events and self.on_new_events is not None:
+            self.on_new_events(events)
+
+    async def _pump_tail(self, client, queue, connected):
+        try:
+            async for batch in client.tail(connected_event=connected):
+                await queue.put(batch)
+        finally:
+            await queue.put(None)
+
+    async def _wait_for_connection(self, connected, tail_task):
+        connected_wait = asyncio.create_task(connected.wait())
+        try:
+            done, _pending = await asyncio.wait(
+                (connected_wait, tail_task),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if connected_wait in done and connected.is_set():
+                return
+            await tail_task
+            raise LokiError("Loki tail closed before the WebSocket connected")
+        finally:
+            if not connected_wait.done():
+                connected_wait.cancel()
+
+    async def _catch_up(self, client, boundary_ns, *, initial):
+        if not initial:
+            self._set_degraded("catching-up", "Loki event source is catching up")
+
+        added = await self.sync.sync_history(
+            client,
+            boundary_ns,
+            initial=initial,
+        )
+        if not initial:
+            self._notify_events(added)
+
+    async def _drain_buffered_tail(self, queue, *, notify):
+        while True:
+            try:
+                batch = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return True
+
+            if batch is None:
+                return False
+
+            boundary_ns = self._time_ns()
+            added, catchup_required = self.sync.merge_tail_batch(
+                batch,
+                boundary_ns=boundary_ns,
+            )
+            if notify:
+                self._notify_events(added)
+            if catchup_required:
+                return "catchup"
+
+    async def _connected_session(self, client, *, initial):
+        queue = asyncio.Queue()
+        connected = asyncio.Event()
+        tail_task = asyncio.create_task(self._pump_tail(client, queue, connected))
+
+        try:
+            await self._wait_for_connection(connected, tail_task)
+            boundary_ns = self._time_ns()
+
+            try:
+                await self._catch_up(client, boundary_ns, initial=initial)
+            except Exception:
+                self._set_degraded(
+                    "history-failed",
+                    "Loki event history synchronization failed",
+                )
+                raise
+
+            drain_result = await self._drain_buffered_tail(
+                queue,
+                notify=not initial,
+            )
+            if drain_result is False:
+                raise LokiError("Loki tail connection closed")
+            if drain_result == "catchup":
+                self._set_degraded(
+                    "catching-up",
+                    "Loki tail reported dropped entries; catching up",
+                )
+                catchup_boundary = self._time_ns()
+                await self._catch_up(client, catchup_boundary, initial=False)
+
+            self._set_healthy()
+            self._started_once = True
+
+            while True:
+                batch = await queue.get()
+                if batch is None:
+                    raise LokiError("Loki tail connection closed")
+
+                batch_boundary = self._time_ns()
+                added, catchup_required = self.sync.merge_tail_batch(
+                    batch,
+                    boundary_ns=batch_boundary,
+                )
+                self._notify_events(added)
+
+                if catchup_required:
+                    self._set_degraded(
+                        "catching-up",
+                        "Loki tail reported dropped entries; catching up",
+                    )
+                    catchup_boundary = self._time_ns()
+                    try:
+                        await self._catch_up(
+                            client,
+                            catchup_boundary,
+                            initial=False,
+                        )
+                    except Exception:
+                        self._set_degraded(
+                            "history-failed",
+                            "Loki event catch-up failed",
+                        )
+                        raise
+                    buffered_result = await self._drain_buffered_tail(
+                        queue,
+                        notify=True,
+                    )
+                    if buffered_result is False:
+                        raise LokiError("Loki tail connection closed")
+                    self._set_healthy()
+        finally:
+            tail_task.cancel()
+            try:
+                await tail_task
+            except asyncio.CancelledError:
+                pass
+
+    async def run(self):
+        """Run until cancelled, reconnecting after transport/history failures."""
+
+        delay = self.reconnect_initial_seconds
+
+        while True:
+            try:
+                async with self.client_factory() as client:
+                    await self._connected_session(
+                        client,
+                        initial=not self._started_once,
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._set_degraded(
+                    "disconnected",
+                    "Loki event source is disconnected",
+                )
+
+            await self._sleep(delay)
+            delay = min(delay * 2, self.reconnect_max_seconds)
