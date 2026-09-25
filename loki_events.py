@@ -358,6 +358,7 @@ class LokiEventSource:
         self._task = None
         self._failure_active = False
         self._started_once = False
+        self._session_became_healthy = False
 
     @property
     def running(self):
@@ -403,6 +404,7 @@ class LokiEventSource:
     def _set_healthy(self):
         self.store.clear_source_state("loki")
         self._failure_active = False
+        self._session_became_healthy = True
 
     def _notify_events(self, events):
         if events and self.on_new_events is not None:
@@ -538,7 +540,7 @@ class LokiEventSource:
             tail_task.cancel()
             try:
                 await tail_task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
                 pass
 
     async def run(self):
@@ -547,6 +549,7 @@ class LokiEventSource:
         delay = self.reconnect_initial_seconds
 
         while True:
+            self._session_became_healthy = False
             try:
                 async with self.client_factory() as client:
                     await self._connected_session(
@@ -560,6 +563,9 @@ class LokiEventSource:
                     "disconnected",
                     "Loki event source is disconnected",
                 )
+
+            if self._session_became_healthy:
+                delay = self.reconnect_initial_seconds
 
             await self._sleep(delay)
             delay = min(delay * 2, self.reconnect_max_seconds)
