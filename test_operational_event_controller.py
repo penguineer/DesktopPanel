@@ -32,9 +32,38 @@ class _FakeSource:
         self.torn_down = True
 
 
+
+
+
+class _FakeJarvisSource:
+    instances = []
+
+    def __init__(
+        self,
+        client_factory,
+        store,
+        on_new_events=None,
+        on_failure=None,
+    ):
+        self.client_factory = client_factory
+        self.store = store
+        self.on_new_events = on_new_events
+        self.on_failure = on_failure
+        self.started = False
+        self.torn_down = False
+        self.__class__.instances.append(self)
+
+    def start(self):
+        self.started = True
+
+    def teardown(self):
+        self.torn_down = True
+
+
 class TestOperationalEventController:
     def setup_method(self):
         _FakeSource.instances = []
+        _FakeJarvisSource.instances = []
 
     def test_missing_config_keeps_source_disabled(self, monkeypatch):
         monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
@@ -180,3 +209,105 @@ class TestOperationalEventController:
         controller.teardown()
 
         assert source.torn_down is True
+
+    def test_loki_only_config_keeps_jarvis_optional(self, monkeypatch):
+        monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+        monkeypatch.setattr(
+            operational_event_controller,
+            "JarvisEventSource",
+            _FakeJarvisSource,
+        )
+        controller = OperationalEventController()
+
+        controller.update_config({
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "secret",
+            },
+        })
+
+        assert len(_FakeSource.instances) == 1
+        assert _FakeJarvisSource.instances == []
+
+    def test_complete_jarvis_config_starts_independent_source(self, monkeypatch):
+        monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+        monkeypatch.setattr(
+            operational_event_controller,
+            "JarvisEventSource",
+            _FakeJarvisSource,
+        )
+        controller = OperationalEventController()
+
+        controller.update_config({
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "secret",
+            },
+            "jarvis": {
+                "url": "https://jarvis.example",
+            },
+        })
+
+        assert len(_FakeSource.instances) == 1
+        assert len(_FakeJarvisSource.instances) == 1
+        assert _FakeJarvisSource.instances[0].started is True
+        assert _FakeJarvisSource.instances[0].store is controller.jarvis_store
+
+    def test_jarvis_change_does_not_restart_loki(self, monkeypatch):
+        monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+        monkeypatch.setattr(
+            operational_event_controller,
+            "JarvisEventSource",
+            _FakeJarvisSource,
+        )
+        controller = OperationalEventController()
+        base = {
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "secret",
+            },
+            "jarvis": {
+                "url": "https://jarvis-first.example",
+            },
+        }
+
+        controller.update_config(base)
+        loki = _FakeSource.instances[0]
+        jarvis = _FakeJarvisSource.instances[0]
+
+        controller.update_config({
+            **base,
+            "jarvis": {"url": "https://jarvis-second.example"},
+        })
+
+        assert len(_FakeSource.instances) == 1
+        assert loki.torn_down is False
+        assert jarvis.torn_down is True
+        assert len(_FakeJarvisSource.instances) == 2
+
+    def test_incomplete_jarvis_config_creates_only_jarvis_source_error(self, monkeypatch):
+        monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+        monkeypatch.setattr(
+            operational_event_controller,
+            "JarvisEventSource",
+            _FakeJarvisSource,
+        )
+        controller = OperationalEventController()
+
+        controller.update_config({
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "secret",
+            },
+            "jarvis": {"url": ""},
+        })
+
+        assert len(_FakeSource.instances) == 1
+        assert _FakeJarvisSource.instances == []
+        assert len(controller.jarvis_store.events) == 1
+        assert controller.jarvis_store.events[0].state == "configuration-error"
+
