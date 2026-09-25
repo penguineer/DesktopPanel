@@ -58,6 +58,7 @@ class TabbedPanelApp(App):
         self.amqp_widget = None
         self.influxdb_widget = None
         self.presence_tray = None
+        self.system_page = None
 
         self.bind(conf_path=self._on_conf_path)
         self.bind(conf=self._on_conf)
@@ -101,6 +102,7 @@ class TabbedPanelApp(App):
     def build(self):
         home_page = HomePage()
         system_page = SystemPage()
+        self.system_page = system_page
         system_page.conf_lambda = lambda conf: conf.get("system", dict())
         gtd_page = GtdPage()
         gtd_page.conf_lambda = lambda conf: conf.get("gtd", dict())
@@ -161,6 +163,8 @@ class TabbedPanelApp(App):
             self.amqp_widget.teardown()
         if self.influxdb_widget is not None:
             self.influxdb_widget.teardown()
+        if self.system_page is not None:
+            self.system_page.teardown()
 
     def select(self, index):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
