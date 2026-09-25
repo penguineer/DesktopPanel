@@ -33,6 +33,10 @@ _SYSLOG_SEVERITIES = {
 }
 
 
+class OperationalEventCapacityError(RuntimeError):
+    """Raised when the defensive in-memory event ceiling would be exceeded."""
+
+
 @dataclass(frozen=True)
 class LokiEntry:
     """One Loki log entry flattened out of a stream response."""
@@ -154,8 +158,18 @@ class OperationalEventStore(EventDispatcher):
     history_duration = StringProperty("PT24H")
     history_seconds = NumericProperty(24 * 60 * 60)
 
-    def __init__(self, *, history_duration="PT24H", source_order: Sequence[str] = ("loki",), **kwargs):
+    def __init__(
+        self,
+        *,
+        history_duration="PT24H",
+        source_order: Sequence[str] = ("loki",),
+        max_events=20000,
+        **kwargs,
+    ):
+        if max_events <= 0:
+            raise ValueError("max_events must be greater than zero")
         super().__init__(**kwargs)
+        self.max_events = max_events
         self._normal_events = {}
         self._source_states = {}
         self._expanded_ids = set()
@@ -171,12 +185,27 @@ class OperationalEventStore(EventDispatcher):
     def merge(self, incoming):
         """Add unseen events and return the events that were newly inserted."""
 
-        added = []
+        incoming = list(incoming)
         for event in incoming:
             if isinstance(event, SourceStateEvent):
                 raise TypeError("SourceStateEvent must be managed with set_source_state()")
-            if event.event_id in self._normal_events:
+
+        new_ids = {
+            event.event_id
+            for event in incoming
+            if event.event_id not in self._normal_events
+        }
+        if len(self._normal_events) + len(new_ids) > self.max_events:
+            raise OperationalEventCapacityError(
+                "Operational event store exceeds the defensive in-memory entry limit"
+            )
+
+        added = []
+        seen = set()
+        for event in incoming:
+            if event.event_id in self._normal_events or event.event_id in seen:
                 continue
+            seen.add(event.event_id)
             self._normal_events[event.event_id] = event
             added.append(event)
 
