@@ -383,7 +383,7 @@ class _FakeSync:
 
 
 class TestJarvisEventSource:
-    def test_bootstrap_is_quiet_but_later_transition_notifies(self):
+    def test_bootstrap_is_quiet_and_resolution_does_not_notify(self):
         starts_ns = _iso_to_ns("2026-09-25T22:00:00Z")
         active = JarvisAlertEvent(
             event_id="stable",
@@ -422,7 +422,50 @@ class TestJarvisEventSource:
         assert notifications == []
 
         asyncio.run(source._reconcile(object()))
-        assert notifications == [[resolved]]
+        assert notifications == []
+
+    def test_new_attention_occurrence_after_bootstrap_notifies(self):
+        starts_ns = _iso_to_ns("2026-09-25T22:00:00Z")
+        first = JarvisAlertEvent(
+            event_id="first",
+            timestamp_ns=starts_ns,
+            source="jarvis",
+            source_annotation="host-a",
+            summary="first",
+            cluster_name="example",
+            fingerprint="first",
+            starts_at="2026-09-25T22:00:00Z",
+            starts_at_ns=starts_ns,
+            resolved_at=None,
+            status="active",
+            severity="warning",
+            labels={},
+            annotations={},
+        )
+        second = JarvisAlertEvent(
+            **{
+                **first.__dict__,
+                "event_id": "second",
+                "fingerprint": "second",
+                "summary": "second",
+                "starts_at": "2026-09-25T22:10:00Z",
+                "starts_at_ns": _iso_to_ns("2026-09-25T22:10:00Z"),
+                "timestamp_ns": _iso_to_ns("2026-09-25T22:10:00Z"),
+            }
+        )
+        notifications = []
+        source = JarvisEventSource(
+            lambda: None,
+            JarvisEventStore(),
+            on_new_events=lambda events: notifications.append(list(events)),
+            time_ns=lambda: _iso_to_ns("2026-09-25T23:00:00Z"),
+        )
+        source.sync = _FakeSync([[first], [first, second]])
+
+        asyncio.run(source._reconcile(object()))
+        asyncio.run(source._reconcile(object()))
+
+        assert notifications == [[second]]
 
     def test_recreated_source_marks_retained_state_stale_on_first_failure(self):
         starts_ns = _iso_to_ns("2026-09-25T22:00:00Z")
