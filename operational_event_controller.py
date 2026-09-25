@@ -58,6 +58,8 @@ class OperationalEventController(object):
                     )
                 self._stop_loki()
                 self._stop_jarvis()
+                self._loki_config_key = None
+                self._jarvis_config_key = None
                 return
 
             self.loki_store.history_duration = history_duration
