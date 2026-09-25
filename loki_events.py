@@ -214,8 +214,14 @@ class LokiClient:
             key=lambda entry: (entry.timestamp_ns, entry.stable_id),
         )
 
-    async def tail(self):
-        """Yield parsed batches from Loki /tail until the WebSocket closes."""
+    async def tail(self, *, connected_event=None):
+        """Yield parsed batches from Loki /tail until the WebSocket closes.
+
+        If connected_event is provided, it is set immediately after the
+        WebSocket handshake succeeds and before any frame is consumed. This
+        lets callers establish the history/tail overlap boundary without
+        waiting for the first log entry.
+        """
 
         session = self._require_session()
         url = _tail_url(self.base_url)
@@ -226,6 +232,8 @@ class LokiClient:
                 params={"query": self.query},
                 auth=self._auth,
             ) as websocket:
+                if connected_event is not None:
+                    connected_event.set()
                 async for message in websocket:
                     if message.type == aiohttp.WSMsgType.TEXT:
                         try:
