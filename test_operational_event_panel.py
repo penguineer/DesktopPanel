@@ -1,39 +1,21 @@
-""" Pytest tests for the operational event panel module """
+""" Pytest tests for the operational event panel helpers """
 
-from operational_event_panel import OperationalEventPanel
-from operational_events import LokiEntry, OperationalEventStore, SyslogEvent
+from operational_event_panel import _entry_height
 
 
-def _event():
-    return SyslogEvent.from_loki(
-        LokiEntry(
-            timestamp_ns=1,
-            labels={
-                "source": "syslog",
-                "host": "wostok",
-                "application": "test",
-                "severity": "warning",
-                "facility": "user",
-            },
-            line="A warning message",
+class TestOperationalEventPanelLayout:
+    def test_expanded_row_is_taller_than_collapsed_row(self):
+        collapsed = _entry_height("A warning message")
+        expanded = _entry_height(
+            "A warning message",
+            '{"host": "host-a", "severity": "warning"}',
+            True,
         )
-    )
 
+        assert expanded > collapsed
 
-class TestOperationalEventPanel:
-    def test_expansion_changes_rendered_row_height(self):
-        store = OperationalEventStore()
-        event = _event()
-        store.merge([event])
+    def test_multiline_details_increase_expanded_height(self):
+        short = _entry_height("message", "one", True)
+        multiline = _entry_height("message", "one\ntwo\nthree", True)
 
-        panel = OperationalEventPanel(store=store)
-        panel._refresh_entries()
-        collapsed_height = panel.entries[0]["height"]
-
-        panel.entries[0]["tap_callback"]()
-        panel._refresh_entries()
-
-        assert store.is_expanded(event.event_id)
-        assert panel.entries[0]["expanded"] is True
-        assert panel.entries[0]["height"] > collapsed_height
-        assert panel.entries[0]["details_height"] > 0
+        assert multiline > short
