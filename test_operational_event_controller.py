@@ -7,11 +7,19 @@ from operational_event_controller import OperationalEventController
 class _FakeSource:
     instances = []
 
-    def __init__(self, client_factory, store, on_new_events=None, on_failure=None):
+    def __init__(
+        self,
+        client_factory,
+        store,
+        on_new_events=None,
+        on_failure=None,
+        notify_initial_history=False,
+    ):
         self.client_factory = client_factory
         self.store = store
         self.on_new_events = on_new_events
         self.on_failure = on_failure
+        self.notify_initial_history = notify_initial_history
         self.started = False
         self.torn_down = False
         self.__class__.instances.append(self)
@@ -69,6 +77,29 @@ class TestOperationalEventController:
 
         assert len(_FakeSource.instances) == 1
         assert _FakeSource.instances[0].torn_down is False
+
+    def test_restarted_source_notifies_recovered_history(self, monkeypatch):
+        monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+        controller = OperationalEventController()
+
+        controller.update_config({
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "first",
+            },
+        })
+        assert _FakeSource.instances[0].notify_initial_history is False
+
+        controller.update_config({
+            "loki": {
+                "url": "https://loki.example",
+                "user": "desktop-panel",
+                "password": "second",
+            },
+        })
+
+        assert _FakeSource.instances[1].notify_initial_history is True
 
     def test_changed_config_restarts_source(self, monkeypatch):
         monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
