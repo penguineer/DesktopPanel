@@ -497,10 +497,6 @@ class LokiEventSource:
         """Catch up until buffered tail data no longer reports another drop."""
 
         while True:
-            self._set_degraded(
-                "catching-up",
-                "Loki tail reported dropped entries; catching up",
-            )
             catchup_boundary = self._time_ns()
             try:
                 await self._catch_up(
