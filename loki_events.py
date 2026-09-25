@@ -8,6 +8,7 @@ from typing import Iterable, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 import aiohttp
+from kivy import Logger
 
 from operational_events import LokiEntry, OperationalEventStore, operational_event_from_loki
 
@@ -114,15 +115,19 @@ class LokiClient:
         query=SYSLOG_QUERY,
         page_limit=1000,
         max_page_limit=16000,
+        max_history_entries=20000,
         session=None,
     ):
         if page_limit <= 0 or max_page_limit < page_limit:
             raise ValueError("Invalid Loki history limits")
+        if max_history_entries <= 0:
+            raise ValueError("max_history_entries must be greater than zero")
 
         self.base_url = base_url.rstrip("/")
         self.query = query
         self.page_limit = page_limit
         self.max_page_limit = max_page_limit
+        self.max_history_entries = max_history_entries
         self._session = session
         self._owns_session = session is None
         self._auth = aiohttp.BasicAuth(username, password)
@@ -191,6 +196,10 @@ class LokiClient:
             )
             for entry in entries:
                 collected[entry.stable_id] = entry
+            if len(collected) > self.max_history_entries:
+                raise LokiHistoryIncompleteError(
+                    "Loki history exceeds the defensive in-memory entry limit"
+                )
 
             if not saturated:
                 continue
@@ -335,7 +344,7 @@ class LokiEventSource:
         *,
         on_new_events=None,
         on_failure=None,
-        notify_initial_history=False,
+        recovery_after_ns=None,
         overlap_seconds=5,
         reconnect_initial_seconds=1,
         reconnect_max_seconds=30,
@@ -352,7 +361,7 @@ class LokiEventSource:
         self.sync = LokiSync(store, overlap_seconds=overlap_seconds)
         self.on_new_events = on_new_events
         self.on_failure = on_failure
-        self.notify_initial_history = notify_initial_history
+        self.recovery_after_ns = recovery_after_ns
         self.reconnect_initial_seconds = reconnect_initial_seconds
         self.reconnect_max_seconds = reconnect_max_seconds
         self._time_ns = time_ns
@@ -434,7 +443,15 @@ class LokiEventSource:
             if not connected_wait.done():
                 connected_wait.cancel()
 
-    async def _catch_up(self, client, boundary_ns, *, initial, notify=None):
+    async def _catch_up(
+        self,
+        client,
+        boundary_ns,
+        *,
+        initial,
+        notify=True,
+        notify_after_ns=None,
+    ):
         if not initial:
             self._set_degraded("catching-up", "Loki event source is catching up")
 
@@ -443,8 +460,13 @@ class LokiEventSource:
             boundary_ns,
             initial=initial,
         )
-        should_notify = (not initial) if notify is None else notify
-        if should_notify:
+        if notify:
+            if notify_after_ns is not None:
+                added = [
+                    event
+                    for event in added
+                    if event.timestamp_ns > notify_after_ns
+                ]
             self._notify_events(added)
 
     async def _drain_buffered_tail(self, queue, *, notify):
@@ -467,6 +489,38 @@ class LokiEventSource:
             if catchup_required:
                 return "catchup"
 
+    async def _recover_dropped_entries(self, client, queue):
+        """Catch up until buffered tail data no longer reports another drop."""
+
+        while True:
+            self._set_degraded(
+                "catching-up",
+                "Loki tail reported dropped entries; catching up",
+            )
+            catchup_boundary = self._time_ns()
+            try:
+                await self._catch_up(
+                    client,
+                    catchup_boundary,
+                    initial=False,
+                    notify=True,
+                )
+            except Exception:
+                self._set_degraded(
+                    "history-failed",
+                    "Loki event catch-up failed",
+                )
+                raise
+
+            buffered_result = await self._drain_buffered_tail(
+                queue,
+                notify=True,
+            )
+            if buffered_result is False:
+                raise LokiError("Loki tail connection closed")
+            if buffered_result != "catchup":
+                return
+
     async def _connected_session(self, client, *, initial):
         queue = asyncio.Queue()
         connected = asyncio.Event()
@@ -476,7 +530,8 @@ class LokiEventSource:
             await self._wait_for_connection(connected, tail_task)
             boundary_ns = self._time_ns()
 
-            notify_initial = initial and self.notify_initial_history
+            recovery_after_ns = self.recovery_after_ns if initial else None
+            notify_initial = initial and recovery_after_ns is not None
 
             try:
                 await self._catch_up(
@@ -484,6 +539,7 @@ class LokiEventSource:
                     boundary_ns,
                     initial=initial,
                     notify=(not initial or notify_initial),
+                    notify_after_ns=recovery_after_ns,
                 )
             except Exception:
                 self._set_degraded(
@@ -499,12 +555,7 @@ class LokiEventSource:
             if drain_result is False:
                 raise LokiError("Loki tail connection closed")
             if drain_result == "catchup":
-                self._set_degraded(
-                    "catching-up",
-                    "Loki tail reported dropped entries; catching up",
-                )
-                catchup_boundary = self._time_ns()
-                await self._catch_up(client, catchup_boundary, initial=False)
+                await self._recover_dropped_entries(client, queue)
 
             self._set_healthy()
             self._started_once = True
@@ -522,29 +573,7 @@ class LokiEventSource:
                 self._notify_events(added)
 
                 if catchup_required:
-                    self._set_degraded(
-                        "catching-up",
-                        "Loki tail reported dropped entries; catching up",
-                    )
-                    catchup_boundary = self._time_ns()
-                    try:
-                        await self._catch_up(
-                            client,
-                            catchup_boundary,
-                            initial=False,
-                        )
-                    except Exception:
-                        self._set_degraded(
-                            "history-failed",
-                            "Loki event catch-up failed",
-                        )
-                        raise
-                    buffered_result = await self._drain_buffered_tail(
-                        queue,
-                        notify=True,
-                    )
-                    if buffered_result is False:
-                        raise LokiError("Loki tail connection closed")
+                    await self._recover_dropped_entries(client, queue)
                     self._set_healthy()
         finally:
             tail_task.cancel()
@@ -568,7 +597,17 @@ class LokiEventSource:
                     )
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except LokiError as exc:
+                Logger.warning("OperationalEvents: Loki source failure: %s", exc)
+                self._set_degraded(
+                    "disconnected",
+                    "Loki event source is disconnected",
+                )
+            except Exception as exc:
+                Logger.exception(
+                    "OperationalEvents: unexpected Loki source failure: %s",
+                    exc,
+                )
                 self._set_degraded(
                     "disconnected",
                     "Loki event source is disconnected",
