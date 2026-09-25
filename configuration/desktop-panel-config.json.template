@@ -57,6 +57,9 @@
         "url": "https://loki.example.com",
         "user": "<Loki Basic Auth user>",
         "password": "<Loki Basic Auth password>"
+      },
+      "jarvis": {
+        "url": "https://jarvis.example.com"
       }
     },
     "power": {
