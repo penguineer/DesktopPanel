@@ -310,8 +310,8 @@ class LokiSync:
             if event is not None:
                 events.append(event)
 
-        added = self.store.merge(events)
         self.store.prune_before(boundary_ns - self.history_window_ns)
+        added = self.store.merge(events)
         return added
 
     async def sync_history(self, client: LokiClient, boundary_ns, *, initial=False):
