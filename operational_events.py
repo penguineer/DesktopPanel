@@ -45,12 +45,27 @@ class LokiEntry:
     def source(self) -> Optional[str]:
         return self.labels.get("source")
 
+    def _identity_labels(self):
+        """Return source-specific labels that define event identity.
+
+        Loki may expose auxiliary or structured-metadata labels differently
+        between query_range and tail. Those labels are useful for display but
+        must not make the same source event acquire a different stable ID.
+        """
+        if self.source == "syslog":
+            keys = ("source", "host", "application", "severity", "facility")
+            return {key: self.labels.get(key, "") for key in keys}
+
+        # Future source adapters should define their own stable identity label
+        # set before they are enabled for display.
+        return dict(self.labels)
+
     @property
     def stable_id(self) -> str:
         """Return a deterministic ID shared by history and tail responses."""
 
         labels_json = json.dumps(
-            dict(self.labels),
+            self._identity_labels(),
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
