@@ -4,6 +4,7 @@ import pytest
 
 from operational_events import (
     LokiEntry,
+    OperationalEventCapacityError,
     OperationalEventStore,
     SourceStateEvent,
     SyslogEvent,
@@ -103,6 +104,19 @@ class TestSyslogEvent:
 
 
 class TestOperationalEventStore:
+    def test_memory_ceiling_fails_explicitly(self):
+        store = OperationalEventStore(max_events=2)
+        first = SyslogEvent.from_loki(_entry(timestamp=1, line="first"))
+        second = SyslogEvent.from_loki(_entry(timestamp=2, line="second"))
+        third = SyslogEvent.from_loki(_entry(timestamp=3, line="third"))
+
+        store.merge([first, second])
+
+        with pytest.raises(OperationalEventCapacityError, match="in-memory"):
+            store.merge([third])
+
+        assert store.events == [second, first]
+
     def test_history_and_tail_overlap_deduplicates(self):
         store = OperationalEventStore()
         event = SyslogEvent.from_loki(_entry())
