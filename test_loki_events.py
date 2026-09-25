@@ -23,7 +23,7 @@ def _loki_entry(ts, line="event", severity="warning"):
         timestamp_ns=ts,
         labels={
             "source": "syslog",
-            "host": "wostok",
+            "host": "host-a",
             "application": "test",
             "severity": severity,
             "facility": "user",
@@ -42,7 +42,7 @@ class TestResponseParsing:
                     {
                         "stream": {
                             "source": "syslog",
-                            "host": "wostok",
+                            "host": "host-a",
                             "severity": "warning",
                         },
                         "values": [
@@ -60,7 +60,7 @@ class TestResponseParsing:
             (100, "first"),
             (101, "second"),
         ]
-        assert entries[0].labels["host"] == "wostok"
+        assert entries[0].labels["host"] == "host-a"
 
     def test_tail_uses_same_entry_shape_and_keeps_dropped_entries(self):
         payload = {
@@ -68,7 +68,7 @@ class TestResponseParsing:
                 {
                     "stream": {
                         "source": "syslog",
-                        "host": "wostok",
+                        "host": "host-a",
                         "severity": "warning",
                     },
                     "values": [["200", "live"]],
@@ -84,7 +84,7 @@ class TestResponseParsing:
                 timestamp_ns=200,
                 labels={
                     "source": "syslog",
-                    "host": "wostok",
+                    "host": "host-a",
                     "severity": "warning",
                 },
                 line="live",
@@ -129,13 +129,21 @@ class TestResponseParsing:
 
 
 class _SubdivisionClient(LokiClient):
-    def __init__(self, responses, *, page_limit=2, max_page_limit=8):
+    def __init__(
+        self,
+        responses,
+        *,
+        page_limit=2,
+        max_page_limit=8,
+        max_history_entries=20000,
+    ):
         super().__init__(
             "https://loki.example",
             "user",
             "password",
             page_limit=page_limit,
             max_page_limit=max_page_limit,
+            max_history_entries=max_history_entries,
             session=object(),
         )
         self.responses = responses
@@ -183,6 +191,28 @@ class TestHistorySubdivision:
 
         assert {e.line for e in entries} == {"a", "b", "c"}
         assert client.calls == [(5, 6, 2), (5, 6, 4)]
+
+    def test_total_history_entry_ceiling_fails_explicitly(self):
+        client = _SubdivisionClient(
+            {
+                (0, 10, 2): ([
+                    _loki_entry(1, "a"),
+                    _loki_entry(2, "b"),
+                ], True),
+                (0, 5, 2): ([
+                    _loki_entry(1, "a"),
+                    _loki_entry(2, "b"),
+                ], False),
+                (5, 10, 2): ([
+                    _loki_entry(6, "c"),
+                    _loki_entry(7, "d"),
+                ], False),
+            },
+            max_history_entries=3,
+        )
+
+        with pytest.raises(LokiHistoryIncompleteError, match="in-memory"):
+            asyncio.run(client.query_range(0, 10))
 
     def test_unpageable_saturated_timestamp_fails_explicitly(self):
         a = _loki_entry(5, "a")
@@ -337,15 +367,18 @@ class _ScriptedClient:
 
 
 class TestLokiEventSource:
-    def test_initial_history_can_notify_after_source_restart(self):
+    def test_recreated_source_notifies_only_events_after_recovery_boundary(self):
         store = OperationalEventStore(history_duration="PT10S")
         notifications = []
-        client = _HistoryClient([_loki_entry(95_000_000_000, "recovered")])
+        client = _HistoryClient([
+            _loki_entry(94_000_000_000, "older-history"),
+            _loki_entry(96_000_000_000, "recovered"),
+        ])
         source = LokiEventSource(
             lambda: None,
             store,
             on_new_events=lambda events: notifications.extend(events),
-            notify_initial_history=True,
+            recovery_after_ns=95_000_000_000,
             time_ns=lambda: 100_000_000_000,
         )
 
@@ -355,10 +388,15 @@ class TestLokiEventSource:
                 100_000_000_000,
                 initial=True,
                 notify=True,
+                notify_after_ns=source.recovery_after_ns,
             )
         )
 
         assert [event.summary for event in notifications] == ["recovered"]
+        assert {event.summary for event in store.events} == {
+            "older-history",
+            "recovered",
+        }
 
     def test_initial_history_does_not_notify(self):
         store = OperationalEventStore(history_duration="PT10S")
@@ -453,6 +491,32 @@ class TestLokiEventSource:
         assert len(failures) == 1
         assert len(store.events) == 1
         assert store.events[0].summary == "retry"
+
+    def test_repeated_buffered_drops_trigger_repeated_catchup(self):
+        store = OperationalEventStore(history_duration="PT10S")
+        source = LokiEventSource(
+            lambda: None,
+            store,
+            time_ns=iter([
+                100_000_000_000,
+                101_000_000_000,
+                102_000_000_000,
+                103_000_000_000,
+            ]).__next__,
+        )
+        catchups = []
+
+        async def fake_catch_up(_client, boundary_ns, **_kwargs):
+            catchups.append(boundary_ns)
+
+        source._catch_up = fake_catch_up
+        queue = asyncio.Queue()
+        queue.put_nowait(TailBatch(entries=(), dropped_entries=[{"timestamp": "1"}]))
+        queue.put_nowait(TailBatch(entries=(), dropped_entries=None))
+
+        asyncio.run(source._recover_dropped_entries(object(), queue))
+
+        assert len(catchups) == 2
 
     def test_teardown_cancels_running_task(self):
         store = OperationalEventStore()
