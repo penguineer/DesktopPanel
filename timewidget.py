@@ -6,6 +6,7 @@ from kivy.uix.label import Label
 
 import dateutil.parser
 import datetime
+import isodate
 
 INTERVALS = [1, 60,
              60 * 60,
@@ -13,6 +14,7 @@ INTERVALS = [1, 60,
              60 * 60 * 24 * 7,
              60 * 60 * 24 * 7 * 4,
              60 * 60 * 24 * 7 * 4 * 12]
+
 NAMES = [('s', 's'),
          ('m', 'm'),
          ('h', 'h'),
@@ -20,6 +22,25 @@ NAMES = [('s', 's'),
          ('w', 'w'),
          ('mo', 'mos'),
          ('yr', 'yrs')]
+
+
+def parse_iso8601_duration(value) -> float:
+    """Parse an ISO 8601 duration string and return seconds.
+
+    Numeric values are deliberately rejected so callers do not accidentally
+    invent unit conventions around a shared helper.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"ISO 8601 duration must be a string: {value!r}")
+    try:
+        duration = isodate.parse_duration(value)
+    except (isodate.isoerror.ISO8601Error, ValueError, TypeError) as exc:
+        raise ValueError(f"Cannot parse ISO 8601 duration: {value!r}") from exc
+
+    if isinstance(duration, isodate.duration.Duration) and (duration.years or duration.months):
+        raise ValueError(f"Calendar-dependent duration is not supported: {value!r}")
+
+    return duration.total_seconds()
 
 
 class HumanizedDurationLabel(Label):
