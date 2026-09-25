@@ -8,6 +8,27 @@ import globalcontent
 from operational_event_controller import OperationalEventController
 from operational_events import SyslogEvent
 
+def _notification_for_operational_events(events):
+    """Return the notification level warranted by newly added events."""
+
+    level = "None"
+    for event in events:
+        if not isinstance(event, SyslogEvent):
+            continue
+        if event.severity in ("critical", "crit", "alert", "emergency", "emerg"):
+            return "Critical"
+        if event.severity in ("error", "err"):
+            level = "Warning"
+        elif level == "None":
+            level = "Info"
+    return level
+
+
+def _higher_notification(current, candidate):
+    rank = {"None": 0, "Info": 1, "Warning": 2, "Critical": 3, "Alert": 4}
+    return candidate if rank[candidate] > rank[current] else current
+
+
 Builder.load_string("""
 #:import TemperaturePanel temperature.TemperaturePanel
 #:import PowerWidget power.PowerWidget
@@ -101,21 +122,8 @@ class SystemPage(globalcontent.ContentPage):
         if self.active:
             return
 
-        level = "None"
-        for event in events:
-            if not isinstance(event, SyslogEvent):
-                continue
-            if event.severity in ("critical", "crit", "alert", "emergency", "emerg"):
-                level = "Critical"
-                break
-            if event.severity in ("error", "err"):
-                level = "Warning"
-            elif level == "None":
-                level = "Info"
-
-        rank = {"None": 0, "Info": 1, "Warning": 2, "Critical": 3, "Alert": 4}
-        if rank[level] > rank[self.notification]:
-            self.notification = level
+        level = _notification_for_operational_events(events)
+        self.notification = _higher_notification(self.notification, level)
 
     def _on_operational_failure(self, _state, _message):
         if not self.active and self.notification in ("None", "Info"):
