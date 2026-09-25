@@ -335,6 +335,7 @@ class LokiEventSource:
         *,
         on_new_events=None,
         on_failure=None,
+        notify_initial_history=False,
         overlap_seconds=5,
         reconnect_initial_seconds=1,
         reconnect_max_seconds=30,
@@ -351,6 +352,7 @@ class LokiEventSource:
         self.sync = LokiSync(store, overlap_seconds=overlap_seconds)
         self.on_new_events = on_new_events
         self.on_failure = on_failure
+        self.notify_initial_history = notify_initial_history
         self.reconnect_initial_seconds = reconnect_initial_seconds
         self.reconnect_max_seconds = reconnect_max_seconds
         self._time_ns = time_ns
@@ -432,7 +434,7 @@ class LokiEventSource:
             if not connected_wait.done():
                 connected_wait.cancel()
 
-    async def _catch_up(self, client, boundary_ns, *, initial):
+    async def _catch_up(self, client, boundary_ns, *, initial, notify=None):
         if not initial:
             self._set_degraded("catching-up", "Loki event source is catching up")
 
@@ -441,7 +443,8 @@ class LokiEventSource:
             boundary_ns,
             initial=initial,
         )
-        if not initial:
+        should_notify = (not initial) if notify is None else notify
+        if should_notify:
             self._notify_events(added)
 
     async def _drain_buffered_tail(self, queue, *, notify):
@@ -473,8 +476,15 @@ class LokiEventSource:
             await self._wait_for_connection(connected, tail_task)
             boundary_ns = self._time_ns()
 
+            notify_initial = initial and self.notify_initial_history
+
             try:
-                await self._catch_up(client, boundary_ns, initial=initial)
+                await self._catch_up(
+                    client,
+                    boundary_ns,
+                    initial=initial,
+                    notify=(not initial or notify_initial),
+                )
             except Exception:
                 self._set_degraded(
                     "history-failed",
@@ -484,7 +494,7 @@ class LokiEventSource:
 
             drain_result = await self._drain_buffered_tail(
                 queue,
-                notify=not initial,
+                notify=(not initial or notify_initial),
             )
             if drain_result is False:
                 raise LokiError("Loki tail connection closed")
