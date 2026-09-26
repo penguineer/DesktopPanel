@@ -107,6 +107,8 @@ class LokiEvent(OperationalEvent):
 class SyslogEvent(LokiEvent):
     """Operational event derived from one normalized syslog Loki entry."""
 
+    glyph: ClassVar[str] = "assets/opevt_syslog.png"
+
     host: str
     application: str
     severity: str

@@ -74,10 +74,12 @@ class TestOperationalEventGlyphs:
         assert OperationalEvent.glyph == "assets/opevt_generic.png"
         assert SourceStateEvent.glyph == OperationalEvent.glyph
 
-    def test_loki_glyph_is_inherited_by_syslog(self):
+    def test_loki_event_has_specialized_glyph(self):
         assert LokiEvent.glyph == "assets/opevt_loki.png"
-        assert SyslogEvent.glyph == LokiEvent.glyph
         assert issubclass(SyslogEvent, LokiEvent)
+
+    def test_syslog_event_has_specialized_glyph(self):
+        assert SyslogEvent.glyph == "assets/opevt_syslog.png"
 
     def test_jarvis_alert_has_specialized_glyph(self):
         assert JarvisAlertEvent.glyph == "assets/opevt_jarvis.png"
