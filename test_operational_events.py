@@ -4,6 +4,8 @@ import pytest
 
 from operational_events import (
     JarvisAlertEvent,
+    KubernetesEvent,
+    KubernetesPodEvent,
     LokiEntry,
     LokiEvent,
     OperationalEvent,
@@ -80,6 +82,12 @@ class TestOperationalEventGlyphs:
 
     def test_syslog_event_has_specialized_glyph(self):
         assert SyslogEvent.glyph == "assets/opevt_syslog.png"
+
+    def test_kubernetes_placeholders_derive_from_loki_and_set_glyphs(self):
+        assert issubclass(KubernetesPodEvent, LokiEvent)
+        assert issubclass(KubernetesEvent, LokiEvent)
+        assert KubernetesPodEvent.glyph == "assets/opevt_k8s_pod.png"
+        assert KubernetesEvent.glyph == "assets/opevt_k8s_event.png"
 
     def test_jarvis_alert_has_specialized_glyph(self):
         assert JarvisAlertEvent.glyph == "assets/opevt_jarvis.png"

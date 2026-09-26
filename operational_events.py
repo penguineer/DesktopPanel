@@ -104,6 +104,20 @@ class LokiEvent(OperationalEvent):
 
 
 @dataclass(frozen=True)
+class KubernetesPodEvent(LokiEvent):
+    """Presentation placeholder for Kubernetes pod log events from Loki."""
+
+    glyph: ClassVar[str] = "assets/opevt_k8s_pod.png"
+
+
+@dataclass(frozen=True)
+class KubernetesEvent(LokiEvent):
+    """Presentation placeholder for Kubernetes cluster events from Loki."""
+
+    glyph: ClassVar[str] = "assets/opevt_k8s_event.png"
+
+
+@dataclass(frozen=True)
 class SyslogEvent(LokiEvent):
     """Operational event derived from one normalized syslog Loki entry."""
 
