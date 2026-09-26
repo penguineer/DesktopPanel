@@ -5,6 +5,7 @@ from operational_event_panel import (
     _combined_operational_events,
     _entry_height,
     _event_color,
+    _severity_visual,
 )
 from operational_events import (
     JarvisAlertEvent,
@@ -56,6 +57,35 @@ class TestOperationalEventPanelLayout:
         multiline = _entry_height("message", "one\ntwo\nthree", True)
 
         assert multiline > short
+
+
+class TestOperationalEventSeverityGlyphs:
+    def test_known_syslog_severities_use_glyphs(self):
+        expected = {
+            "emergency": "assets/opevt_severity_emerg.png",
+            "emerg": "assets/opevt_severity_emerg.png",
+            "alert": "assets/opevt_severity_alert.png",
+            "critical": "assets/opevt_severity_crit.png",
+            "crit": "assets/opevt_severity_crit.png",
+            "error": "assets/opevt_severity_err.png",
+            "err": "assets/opevt_severity_err.png",
+            "warning": "assets/opevt_severity_warning.png",
+            "warn": "assets/opevt_severity_warning.png",
+            "notice": "assets/opevt_severity_notice.png",
+            "informational": "assets/opevt_severity_info.png",
+            "info": "assets/opevt_severity_info.png",
+            "debug": "assets/opevt_severity_debug.png",
+            "none": "assets/opevt_severity_none.png",
+        }
+
+        for severity, glyph in expected.items():
+            assert _severity_visual(severity) == (glyph, "")
+
+    def test_custom_severity_falls_back_to_text(self):
+        assert _severity_visual("custom") == ("", "custom")
+
+    def test_empty_severity_has_no_glyph_or_text(self):
+        assert _severity_visual("") == ("", "")
 
 
 class TestOperationalEventColors:

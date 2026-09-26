@@ -29,7 +29,7 @@ class Colors:
 
 
 _ENTRY_PADDING_V = 4
-_ENTRY_META_HEIGHT = 14
+_ENTRY_META_HEIGHT = 16
 _ENTRY_SPACING = 2
 _ENTRY_LINE_HEIGHT = 16
 _ENTRY_CHARS_PER_LINE = 50
@@ -38,6 +38,35 @@ _ENTRY_DETAILS_PADDING = 4
 
 _CRITICAL_SEVERITIES = frozenset(("critical", "crit", "alert", "emergency", "emerg"))
 _ERROR_SEVERITIES = frozenset(("error", "err"))
+
+_SEVERITY_GLYPHS = {
+    "emergency": "assets/opevt_severity_emerg.png",
+    "emerg": "assets/opevt_severity_emerg.png",
+    "alert": "assets/opevt_severity_alert.png",
+    "critical": "assets/opevt_severity_crit.png",
+    "crit": "assets/opevt_severity_crit.png",
+    "error": "assets/opevt_severity_err.png",
+    "err": "assets/opevt_severity_err.png",
+    "warning": "assets/opevt_severity_warning.png",
+    "warn": "assets/opevt_severity_warning.png",
+    "notice": "assets/opevt_severity_notice.png",
+    "informational": "assets/opevt_severity_info.png",
+    "info": "assets/opevt_severity_info.png",
+    "debug": "assets/opevt_severity_debug.png",
+    "none": "assets/opevt_severity_none.png",
+}
+
+
+def _severity_visual(severity):
+    """Return (glyph, text) for a severity tag.
+
+    Known syslog severity names use a glyph. Unknown/custom values retain their
+    text so the header never loses information.
+    """
+
+    text = severity or ""
+    glyph = _SEVERITY_GLYPHS.get(text.lower(), "")
+    return glyph, "" if glyph else text
 
 
 def _wrapped_lines(text, chars_per_line=_ENTRY_CHARS_PER_LINE):
@@ -158,19 +187,19 @@ Builder.load_string("""
     BoxLayout:
         orientation: 'horizontal'
         size_hint_y: None
-        height: 14
+        height: 16
         spacing: 4
 
         Widget:
             size_hint_x: None
-            width: 14
+            width: 16
             canvas:
                 Color:
                     rgba: root.entry_color
                 Rectangle:
                     source: root.glyph_source
-                    pos: self.x + 1, self.y + 1
-                    size: 12, 12
+                    pos: self.x, self.y
+                    size: 16, 16
 
         Label:
             text: root.event_time
@@ -207,6 +236,30 @@ Builder.load_string("""
             size_hint_x: 1
             shorten: True
             shorten_from: 'left'
+
+        Widget:
+            size_hint_x: None
+            width: 16 if root.severity_glyph_source else severity_label.texture_size[0]
+            canvas:
+                Color:
+                    rgba: root.entry_color if root.severity_glyph_source else [0, 0, 0, 0]
+                Rectangle:
+                    source: root.severity_glyph_source
+                    pos: self.right - 16, self.y
+                    size: (16, 16) if root.severity_glyph_source else (0, 0)
+
+            Label:
+                id: severity_label
+                text: root.severity_text
+                font_size: 10
+                font_name: 'assets/FiraMono-Regular.ttf'
+                color: root.entry_color
+                halign: 'right'
+                valign: 'center'
+                text_size: None, self.height
+                size_hint: None, None
+                size: self.texture_size[0], self.parent.height
+                pos: self.parent.right - self.width, self.parent.y
 
     Label:
         text: root.summary
@@ -268,6 +321,8 @@ class OperationalEventRow(BoxLayout):
     event_time = StringProperty("")
     source_annotation = StringProperty("")
     meta_text = StringProperty("")
+    severity_glyph_source = StringProperty("")
+    severity_text = StringProperty("")
     summary = StringProperty("")
     details = StringProperty("")
     summary_height = NumericProperty(_ENTRY_LINE_HEIGHT)
@@ -371,20 +426,26 @@ class OperationalEventPanel(BoxLayout):
             summary_lines = _wrapped_lines(event.summary)
             detail_lines = _wrapped_lines(details) if expanded else 0
 
+            severity_glyph_source = ""
+            severity_text = ""
+
             if isinstance(event, SyslogEvent):
-                meta_text = "%s (%s) · %s" % (
+                severity_glyph_source, severity_text = _severity_visual(event.severity)
+                severity_separator = " ·" if severity_text else ""
+                meta_text = "%s (%s)%s" % (
                     event.application,
                     event.facility,
-                    event.severity,
+                    severity_separator,
                 )
                 event_time = _formatted_timestamp(event.timestamp_ns)
             elif isinstance(event, JarvisAlertEvent):
-                stale = " · stale" if event.stale else ""
-                meta_text = "%s · %s%s" % (
-                    event.status,
-                    event.severity or "unknown",
-                    stale,
-                )
+                severity_value = event.severity or "unknown"
+                severity_glyph_source, severity_text = _severity_visual(severity_value)
+                meta_parts = [event.status]
+                if event.stale:
+                    meta_parts.append("stale")
+                severity_separator = " ·" if severity_text else ""
+                meta_text = " · ".join(meta_parts) + severity_separator
                 if event.needs_attention:
                     age_millis = max(0, (now_ns - event.starts_at_ns) // 1_000_000)
                     event_time = humanize_duration_millis(age_millis)
@@ -404,6 +465,8 @@ class OperationalEventPanel(BoxLayout):
                 "event_time": event_time,
                 "source_annotation": event.source_annotation,
                 "meta_text": meta_text,
+                "severity_glyph_source": severity_glyph_source,
+                "severity_text": severity_text,
                 "summary": event.summary,
                 "details": details,
                 "summary_height": summary_lines * _ENTRY_LINE_HEIGHT,
