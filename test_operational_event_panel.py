@@ -75,6 +75,7 @@ class TestOperationalEventSeverityGlyphs:
             "informational": "assets/opevt_severity_info.png",
             "info": "assets/opevt_severity_info.png",
             "debug": "assets/opevt_severity_debug.png",
+            "none": "assets/opevt_severity_none.png",
         }
 
         for severity, glyph in expected.items():

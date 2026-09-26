@@ -29,7 +29,7 @@ class Colors:
 
 
 _ENTRY_PADDING_V = 4
-_ENTRY_META_HEIGHT = 14
+_ENTRY_META_HEIGHT = 16
 _ENTRY_SPACING = 2
 _ENTRY_LINE_HEIGHT = 16
 _ENTRY_CHARS_PER_LINE = 50
@@ -53,6 +53,7 @@ _SEVERITY_GLYPHS = {
     "informational": "assets/opevt_severity_info.png",
     "info": "assets/opevt_severity_info.png",
     "debug": "assets/opevt_severity_debug.png",
+    "none": "assets/opevt_severity_none.png",
 }
 
 
@@ -186,19 +187,19 @@ Builder.load_string("""
     BoxLayout:
         orientation: 'horizontal'
         size_hint_y: None
-        height: 14
+        height: 16
         spacing: 4
 
         Widget:
             size_hint_x: None
-            width: 14
+            width: 16
             canvas:
                 Color:
                     rgba: root.entry_color
                 Rectangle:
                     source: root.glyph_source
-                    pos: self.x + 1, self.y + 1
-                    size: 12, 12
+                    pos: self.x, self.y
+                    size: 16, 16
 
         Label:
             text: root.event_time
@@ -238,26 +239,27 @@ Builder.load_string("""
 
         Widget:
             size_hint_x: None
-            width: 14 if root.severity_glyph_source else 0
-            opacity: 1 if root.severity_glyph_source else 0
+            width: 16 if root.severity_glyph_source else severity_label.texture_size[0]
             canvas:
                 Color:
-                    rgba: root.entry_color
+                    rgba: root.entry_color if root.severity_glyph_source else [0, 0, 0, 0]
                 Rectangle:
                     source: root.severity_glyph_source
-                    pos: self.x + 1, self.y + 1
-                    size: 12, 12
+                    pos: self.right - 16, self.y
+                    size: (16, 16) if root.severity_glyph_source else (0, 0)
 
-        Label:
-            text: root.severity_text
-            font_size: 10
-            font_name: 'assets/FiraMono-Regular.ttf'
-            color: root.entry_color
-            halign: 'right'
-            valign: 'center'
-            text_size: self.size
-            size_hint_x: None
-            width: self.texture_size[0] if root.severity_text else 0
+            Label:
+                id: severity_label
+                text: root.severity_text
+                font_size: 10
+                font_name: 'assets/FiraMono-Regular.ttf'
+                color: root.entry_color
+                halign: 'right'
+                valign: 'center'
+                text_size: None, self.height
+                size_hint: None, None
+                size: self.texture_size[0], self.parent.height
+                pos: self.parent.right - self.width, self.parent.y
 
     Label:
         text: root.summary
@@ -429,9 +431,11 @@ class OperationalEventPanel(BoxLayout):
 
             if isinstance(event, SyslogEvent):
                 severity_glyph_source, severity_text = _severity_visual(event.severity)
-                meta_text = "%s (%s) ·" % (
+                severity_separator = " ·" if severity_text else ""
+                meta_text = "%s (%s)%s" % (
                     event.application,
                     event.facility,
+                    severity_separator,
                 )
                 event_time = _formatted_timestamp(event.timestamp_ns)
             elif isinstance(event, JarvisAlertEvent):
@@ -440,7 +444,8 @@ class OperationalEventPanel(BoxLayout):
                 meta_parts = [event.status]
                 if event.stale:
                     meta_parts.append("stale")
-                meta_text = " · ".join(meta_parts) + " ·"
+                severity_separator = " ·" if severity_text else ""
+                meta_text = " · ".join(meta_parts) + severity_separator
                 if event.needs_attention:
                     age_millis = max(0, (now_ns - event.starts_at_ns) // 1_000_000)
                     event_time = humanize_duration_millis(age_millis)
