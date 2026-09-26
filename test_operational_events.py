@@ -74,7 +74,9 @@ class TestLokiEntryIdentity:
 class TestOperationalEventGlyphs:
     def test_generic_glyph_is_default_for_unspecialized_events(self):
         assert OperationalEvent.glyph == "assets/opevt_generic.png"
-        assert SourceStateEvent.glyph == OperationalEvent.glyph
+
+    def test_source_state_event_has_specialized_glyph(self):
+        assert SourceStateEvent.glyph == "assets/opevt_source_state.png"
 
     def test_loki_event_has_specialized_glyph(self):
         assert LokiEvent.glyph == "assets/opevt_loki.png"

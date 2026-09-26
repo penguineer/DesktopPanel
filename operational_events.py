@@ -192,6 +192,8 @@ class JarvisAlertEvent(OperationalEvent):
 class SourceStateEvent(OperationalEvent):
     """Synthetic event describing a current degraded source state."""
 
+    glyph: ClassVar[str] = "assets/opevt_source_state.png"
+
     state: str
 
 
