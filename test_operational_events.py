@@ -69,11 +69,13 @@ class TestLokiEntryIdentity:
 
 
 class TestOperationalEventGlyphs:
-    def test_generic_glyph_is_default_for_event_hierarchy(self):
+    def test_generic_glyph_is_default_for_unspecialized_events(self):
         assert OperationalEvent.glyph == "assets/opevt_generic.png"
         assert SyslogEvent.glyph == OperationalEvent.glyph
-        assert JarvisAlertEvent.glyph == OperationalEvent.glyph
         assert SourceStateEvent.glyph == OperationalEvent.glyph
+
+    def test_jarvis_alert_has_specialized_glyph(self):
+        assert JarvisAlertEvent.glyph == "assets/opevt_jarvis.png"
 
 
 class TestSyslogEvent:

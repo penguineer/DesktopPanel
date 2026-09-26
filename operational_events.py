@@ -147,6 +147,8 @@ class JarvisAlertEvent(OperationalEvent):
     severity, lifecycle state, and resolution time are payload, not identity.
     """
 
+    glyph: ClassVar[str] = "assets/opevt_jarvis.png"
+
     cluster_name: str
     fingerprint: str
     starts_at: str
