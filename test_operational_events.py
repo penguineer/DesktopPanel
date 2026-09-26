@@ -5,6 +5,7 @@ import pytest
 from operational_events import (
     JarvisAlertEvent,
     LokiEntry,
+    LokiEvent,
     OperationalEvent,
     OperationalEventCapacityError,
     OperationalEventStore,
@@ -71,8 +72,12 @@ class TestLokiEntryIdentity:
 class TestOperationalEventGlyphs:
     def test_generic_glyph_is_default_for_unspecialized_events(self):
         assert OperationalEvent.glyph == "assets/opevt_generic.png"
-        assert SyslogEvent.glyph == OperationalEvent.glyph
         assert SourceStateEvent.glyph == OperationalEvent.glyph
+
+    def test_loki_glyph_is_inherited_by_syslog(self):
+        assert LokiEvent.glyph == "assets/opevt_loki.png"
+        assert SyslogEvent.glyph == LokiEvent.glyph
+        assert issubclass(SyslogEvent, LokiEvent)
 
     def test_jarvis_alert_has_specialized_glyph(self):
         assert JarvisAlertEvent.glyph == "assets/opevt_jarvis.png"

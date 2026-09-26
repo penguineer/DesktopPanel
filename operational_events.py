@@ -97,7 +97,14 @@ class OperationalEvent:
 
 
 @dataclass(frozen=True)
-class SyslogEvent(OperationalEvent):
+class LokiEvent(OperationalEvent):
+    """Base presentation class for operational events derived from Loki."""
+
+    glyph: ClassVar[str] = "assets/opevt_loki.png"
+
+
+@dataclass(frozen=True)
+class SyslogEvent(LokiEvent):
     """Operational event derived from one normalized syslog Loki entry."""
 
     host: str
