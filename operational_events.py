@@ -8,7 +8,7 @@ reconciliation semantics to the presentation layer.
 from dataclasses import dataclass, replace
 import hashlib
 import json
-from typing import Mapping, Optional, Sequence
+from typing import ClassVar, Mapping, Optional, Sequence
 
 from kivy.event import EventDispatcher
 from kivy.properties import ListProperty, NumericProperty, StringProperty
@@ -87,6 +87,8 @@ class LokiEntry:
 class OperationalEvent:
     """Common presentation contract for operational events."""
 
+    glyph: ClassVar[str] = "assets/opevt_generic.png"
+
     event_id: str
     timestamp_ns: int
     source: str
@@ -95,8 +97,31 @@ class OperationalEvent:
 
 
 @dataclass(frozen=True)
-class SyslogEvent(OperationalEvent):
+class LokiEvent(OperationalEvent):
+    """Base presentation class for operational events derived from Loki."""
+
+    glyph: ClassVar[str] = "assets/opevt_loki.png"
+
+
+@dataclass(frozen=True)
+class KubernetesPodEvent(LokiEvent):
+    """Presentation placeholder for Kubernetes pod log events from Loki."""
+
+    glyph: ClassVar[str] = "assets/opevt_k8s_pod.png"
+
+
+@dataclass(frozen=True)
+class KubernetesEvent(LokiEvent):
+    """Presentation placeholder for Kubernetes cluster events from Loki."""
+
+    glyph: ClassVar[str] = "assets/opevt_k8s_event.png"
+
+
+@dataclass(frozen=True)
+class SyslogEvent(LokiEvent):
     """Operational event derived from one normalized syslog Loki entry."""
+
+    glyph: ClassVar[str] = "assets/opevt_syslog.png"
 
     host: str
     application: str
@@ -145,6 +170,8 @@ class JarvisAlertEvent(OperationalEvent):
     severity, lifecycle state, and resolution time are payload, not identity.
     """
 
+    glyph: ClassVar[str] = "assets/opevt_jarvis.png"
+
     cluster_name: str
     fingerprint: str
     starts_at: str
@@ -164,6 +191,8 @@ class JarvisAlertEvent(OperationalEvent):
 @dataclass(frozen=True)
 class SourceStateEvent(OperationalEvent):
     """Synthetic event describing a current degraded source state."""
+
+    glyph: ClassVar[str] = "assets/opevt_source_state.png"
 
     state: str
 

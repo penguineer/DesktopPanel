@@ -3,7 +3,12 @@
 import pytest
 
 from operational_events import (
+    JarvisAlertEvent,
+    KubernetesEvent,
+    KubernetesPodEvent,
     LokiEntry,
+    LokiEvent,
+    OperationalEvent,
     OperationalEventCapacityError,
     OperationalEventStore,
     SourceStateEvent,
@@ -64,6 +69,30 @@ class TestLokiEntryIdentity:
         assert _entry(application="first").stable_id != _entry(
             application="second"
         ).stable_id
+
+
+class TestOperationalEventGlyphs:
+    def test_generic_glyph_is_default_for_unspecialized_events(self):
+        assert OperationalEvent.glyph == "assets/opevt_generic.png"
+
+    def test_source_state_event_has_specialized_glyph(self):
+        assert SourceStateEvent.glyph == "assets/opevt_source_state.png"
+
+    def test_loki_event_has_specialized_glyph(self):
+        assert LokiEvent.glyph == "assets/opevt_loki.png"
+        assert issubclass(SyslogEvent, LokiEvent)
+
+    def test_syslog_event_has_specialized_glyph(self):
+        assert SyslogEvent.glyph == "assets/opevt_syslog.png"
+
+    def test_kubernetes_placeholders_derive_from_loki_and_set_glyphs(self):
+        assert issubclass(KubernetesPodEvent, LokiEvent)
+        assert issubclass(KubernetesEvent, LokiEvent)
+        assert KubernetesPodEvent.glyph == "assets/opevt_k8s_pod.png"
+        assert KubernetesEvent.glyph == "assets/opevt_k8s_event.png"
+
+    def test_jarvis_alert_has_specialized_glyph(self):
+        assert JarvisAlertEvent.glyph == "assets/opevt_jarvis.png"
 
 
 class TestSyslogEvent:

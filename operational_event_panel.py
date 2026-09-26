@@ -161,6 +161,17 @@ Builder.load_string("""
         height: 14
         spacing: 4
 
+        Widget:
+            size_hint_x: None
+            width: 14
+            canvas:
+                Color:
+                    rgba: root.entry_color
+                Rectangle:
+                    source: root.glyph_source
+                    pos: self.x + 1, self.y + 1
+                    size: 12, 12
+
         Label:
             text: root.event_time
             font_size: 10
@@ -253,6 +264,7 @@ Builder.load_string("""
 
 
 class OperationalEventRow(BoxLayout):
+    glyph_source = StringProperty("")
     event_time = StringProperty("")
     source_annotation = StringProperty("")
     meta_text = StringProperty("")
@@ -388,6 +400,7 @@ class OperationalEventPanel(BoxLayout):
             data.append({
                 "size_hint": [1, None],
                 "height": _entry_height(event.summary, details, expanded),
+                "glyph_source": event.glyph,
                 "event_time": event_time,
                 "source_annotation": event.source_annotation,
                 "meta_text": meta_text,
