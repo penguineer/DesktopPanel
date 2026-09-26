@@ -8,7 +8,7 @@ reconciliation semantics to the presentation layer.
 from dataclasses import dataclass, replace
 import hashlib
 import json
-from typing import Mapping, Optional, Sequence
+from typing import ClassVar, Mapping, Optional, Sequence
 
 from kivy.event import EventDispatcher
 from kivy.properties import ListProperty, NumericProperty, StringProperty
@@ -86,6 +86,8 @@ class LokiEntry:
 @dataclass(frozen=True)
 class OperationalEvent:
     """Common presentation contract for operational events."""
+
+    glyph: ClassVar[str] = "assets/opevt_generic.png"
 
     event_id: str
     timestamp_ns: int

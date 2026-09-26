@@ -3,7 +3,9 @@
 import pytest
 
 from operational_events import (
+    JarvisAlertEvent,
     LokiEntry,
+    OperationalEvent,
     OperationalEventCapacityError,
     OperationalEventStore,
     SourceStateEvent,
@@ -64,6 +66,14 @@ class TestLokiEntryIdentity:
         assert _entry(application="first").stable_id != _entry(
             application="second"
         ).stable_id
+
+
+class TestOperationalEventGlyphs:
+    def test_generic_glyph_is_default_for_event_hierarchy(self):
+        assert OperationalEvent.glyph == "assets/opevt_generic.png"
+        assert SyslogEvent.glyph == OperationalEvent.glyph
+        assert JarvisAlertEvent.glyph == OperationalEvent.glyph
+        assert SourceStateEvent.glyph == OperationalEvent.glyph
 
 
 class TestSyslogEvent:
