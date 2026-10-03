@@ -10,7 +10,12 @@ from urllib.parse import urlsplit, urlunsplit
 import aiohttp
 from kivy import Logger
 
-from operational_events import LokiEntry, OperationalEventStore, operational_event_from_loki
+from operational_events import (
+    LokiEntry,
+    OperationalEventStore,
+    normalize_syslog_severity,
+    operational_event_from_loki,
+)
 
 
 SYSLOG_QUERY = (
@@ -268,11 +273,21 @@ class LokiClient:
 class LokiSync:
     """History-window and catch-up state for one Loki-backed event source."""
 
-    def __init__(self, store: OperationalEventStore, *, overlap_seconds=5):
+    def __init__(
+        self,
+        store: OperationalEventStore,
+        *,
+        overlap_seconds=5,
+        min_severity=None,
+    ):
         if overlap_seconds < 0:
             raise ValueError("overlap_seconds must not be negative")
         self.store = store
         self.overlap_ns = int(overlap_seconds * 1_000_000_000)
+        configured_min_severity = (
+            store.min_severity if min_severity is None else min_severity
+        )
+        self.min_severity = normalize_syslog_severity(configured_min_severity)
         self.history_covered_through_ns: Optional[int] = None
 
     @property
@@ -306,7 +321,10 @@ class LokiSync:
     def merge_entries(self, entries, *, boundary_ns):
         events = []
         for entry in entries:
-            event = operational_event_from_loki(entry)
+            event = operational_event_from_loki(
+                entry,
+                min_severity=self.min_severity,
+            )
             if event is not None:
                 events.append(event)
 
@@ -333,7 +351,6 @@ class LokiSync:
         return added, catchup_required
 
 
-
 class LokiEventSource:
     """Long-running tail-first Loki source with reconnect and catch-up."""
 
@@ -348,6 +365,7 @@ class LokiEventSource:
         overlap_seconds=5,
         reconnect_initial_seconds=1,
         reconnect_max_seconds=30,
+        min_severity=None,
         time_ns=time.time_ns,
         sleep=asyncio.sleep,
     ):
@@ -358,7 +376,11 @@ class LokiEventSource:
 
         self.client_factory = client_factory
         self.store = store
-        self.sync = LokiSync(store, overlap_seconds=overlap_seconds)
+        self.sync = LokiSync(
+            store,
+            overlap_seconds=overlap_seconds,
+            min_severity=min_severity,
+        )
         self.on_new_events = on_new_events
         self.on_failure = on_failure
         self.recovery_after_ns = recovery_after_ns
