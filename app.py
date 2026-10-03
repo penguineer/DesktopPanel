@@ -9,6 +9,10 @@ import signal
 import sys
 import json
 
+from logging_setup import configure_console_logging
+
+configure_console_logging()
+
 import amqp
 import mqtt
 import influxdb
