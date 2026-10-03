@@ -390,6 +390,7 @@ class LokiEventSource:
         self._sleep = sleep
         self._task = None
         self._failure_active = False
+        self._degraded_state = None
         self._started_once = False
         self._session_became_healthy = False
 
@@ -426,6 +427,7 @@ class LokiEventSource:
             pass
 
     def _set_degraded(self, state, message):
+        self._degraded_state = state
         timestamp_ns = self._time_ns()
         self.store.set_source_state(
             "loki",
@@ -441,6 +443,7 @@ class LokiEventSource:
     def _set_healthy(self):
         self.store.clear_source_state("loki")
         self._failure_active = False
+        self._degraded_state = None
         self._session_became_healthy = True
 
     def _notify_events(self, events):
@@ -527,10 +530,10 @@ class LokiEventSource:
                     initial=False,
                     notify=True,
                 )
-            except Exception:
+            except Exception as exc:
                 self._set_degraded(
                     "history-failed",
-                    "Loki event catch-up failed",
+                    f"Loki event catch-up failed: {exc}",
                 )
                 raise
 
@@ -563,10 +566,10 @@ class LokiEventSource:
                     notify=(not initial or notify_initial),
                     notify_after_ns=recovery_after_ns,
                 )
-            except Exception:
+            except Exception as exc:
                 self._set_degraded(
                     "history-failed",
-                    "Loki event history synchronization failed",
+                    f"Loki event history synchronization failed: {exc}",
                 )
                 raise
 
@@ -611,6 +614,7 @@ class LokiEventSource:
 
         while True:
             self._session_became_healthy = False
+            self._degraded_state = None
             try:
                 async with self.client_factory() as client:
                     await self._connected_session(
@@ -621,19 +625,21 @@ class LokiEventSource:
                 raise
             except LokiError as exc:
                 Logger.warning("OperationalEvents: Loki source failure: %s", exc)
-                self._set_degraded(
-                    "disconnected",
-                    "Loki event source is disconnected",
-                )
+                if self._degraded_state != "history-failed":
+                    self._set_degraded(
+                        "disconnected",
+                        "Loki event source is disconnected",
+                    )
             except Exception as exc:
                 Logger.exception(
                     "OperationalEvents: unexpected Loki source failure: %s",
                     exc,
                 )
-                self._set_degraded(
-                    "disconnected",
-                    "Loki event source is disconnected",
-                )
+                if self._degraded_state != "history-failed":
+                    self._set_degraded(
+                        "disconnected",
+                        "Loki event source is disconnected",
+                    )
 
             if self._session_became_healthy:
                 delay = self.reconnect_initial_seconds
