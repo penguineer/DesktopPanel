@@ -6,8 +6,23 @@ from kivy import Logger
 
 from jarvis_events import JarvisClient, JarvisEventSource
 from loki_events import LokiClient, LokiEventSource
-from operational_events import JarvisEventStore, OperationalEventStore
+from operational_events import (
+    JarvisEventStore,
+    OperationalEventStore,
+    syslog_severity_labels,
+)
 from timewidget import parse_iso8601_duration
+
+
+def _build_syslog_query(min_severity="warning"):
+    """Build the Loki syslog selector for a minimum syslog severity."""
+
+    min_severity, labels = syslog_severity_labels(min_severity)
+    severity_pattern = "|".join(labels)
+    return (
+        '{source="syslog",alert_suppressed!="true",'
+        f'severity=~"{severity_pattern}"}}'
+    ), min_severity
 
 
 class OperationalEventController(object):
@@ -73,11 +88,34 @@ class OperationalEventController(object):
         url = loki.get("url")
         user = loki.get("user")
         password = loki.get("password")
-        config_key = (bool(config), history_duration, url, user, password)
+        min_severity = loki.get("min_severity", "warning")
+
+        try:
+            query, min_severity = _build_syslog_query(min_severity)
+        except ValueError as exc:
+            self._stop_loki()
+            self._loki_config_key = None
+            self._configuration_error(
+                self.loki_store,
+                "loki",
+                "Invalid Loki operational event minimum severity",
+                exc,
+            )
+            return
+
+        config_key = (
+            bool(config),
+            history_duration,
+            url,
+            user,
+            password,
+            min_severity,
+        )
         if config_key == self._loki_config_key:
             return
 
         self._stop_loki()
+        self.loki_store.set_min_severity(min_severity)
         self._loki_config_key = config_key
 
         if not config:
@@ -93,7 +131,7 @@ class OperationalEventController(object):
             return
 
         def client_factory():
-            return LokiClient(url, user, password)
+            return LokiClient(url, user, password, query=query)
 
         self._loki_source = LokiEventSource(
             client_factory,

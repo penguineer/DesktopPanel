@@ -56,7 +56,8 @@
       "loki": {
         "url": "https://loki.example.com",
         "user": "<Loki Basic Auth user>",
-        "password": "<Loki Basic Auth password>"
+        "password": "<Loki Basic Auth password>",
+        "min_severity": "<minimum syslog severity to retrieve: debug, info, notice, warning (default), error, critical, alert, emergency>"
       },
       "jarvis": {
         "url": "https://jarvis.example.com"

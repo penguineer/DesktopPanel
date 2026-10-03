@@ -16,21 +16,62 @@ from kivy.properties import ListProperty, NumericProperty, StringProperty
 from timewidget import parse_iso8601_duration
 
 
-_SYSLOG_SEVERITIES = {
-    "emergency": 0,
-    "emerg": 0,
-    "alert": 1,
-    "critical": 2,
-    "crit": 2,
-    "error": 3,
-    "err": 3,
-    "warning": 4,
-    "warn": 4,
-    "notice": 5,
-    "informational": 6,
-    "info": 6,
-    "debug": 7,
+SYSLOG_SEVERITIES = (
+    ("debug", ("debug",)),
+    ("info", ("info", "informational")),
+    ("notice", ("notice",)),
+    ("warning", ("warning", "warn")),
+    ("error", ("error", "err")),
+    ("critical", ("critical", "crit")),
+    ("alert", ("alert",)),
+    ("emergency", ("emergency", "emerg")),
+)
+_SYSLOG_SEVERITY_ALIASES = {
+    alias: canonical
+    for canonical, aliases in SYSLOG_SEVERITIES
+    for alias in aliases
 }
+_SYSLOG_SEVERITY_LEVELS = {
+    canonical: level
+    for level, (canonical, _aliases) in enumerate(SYSLOG_SEVERITIES)
+}
+
+
+def normalize_syslog_severity(severity):
+    """Return the canonical syslog severity name or raise ValueError."""
+
+    normalized = str(severity).strip().lower()
+    try:
+        return _SYSLOG_SEVERITY_ALIASES[normalized]
+    except KeyError as exc:
+        supported = ", ".join(canonical for canonical, _aliases in SYSLOG_SEVERITIES)
+        raise ValueError(
+            f"Unsupported syslog severity {severity!r}; expected one of: {supported}"
+        ) from exc
+
+
+def syslog_severity_labels(min_severity="warning"):
+    """Return normalized minimum severity and all matching Loki label values."""
+
+    canonical = normalize_syslog_severity(min_severity)
+    start = _SYSLOG_SEVERITY_LEVELS[canonical]
+    labels = tuple(
+        alias
+        for _severity, aliases in SYSLOG_SEVERITIES[start:]
+        for alias in aliases
+    )
+    return canonical, labels
+
+
+def syslog_severity_meets_threshold(severity, min_severity="warning"):
+    """Return whether severity is known and at least as severe as the minimum."""
+
+    try:
+        severity = normalize_syslog_severity(severity)
+        min_severity = normalize_syslog_severity(min_severity)
+    except ValueError:
+        return False
+    return _SYSLOG_SEVERITY_LEVELS[severity] >= _SYSLOG_SEVERITY_LEVELS[min_severity]
 
 
 class OperationalEventCapacityError(RuntimeError):
@@ -130,7 +171,12 @@ class SyslogEvent(LokiEvent):
     labels: Mapping[str, str]
 
     @classmethod
-    def from_loki(cls, entry: LokiEntry) -> Optional["SyslogEvent"]:
+    def from_loki(
+        cls,
+        entry: LokiEntry,
+        *,
+        min_severity="warning",
+    ) -> Optional["SyslogEvent"]:
         labels = entry.labels
         if labels.get("source") != "syslog":
             return None
@@ -139,8 +185,7 @@ class SyslogEvent(LokiEvent):
             return None
 
         severity = labels.get("severity", "").lower()
-        level = _SYSLOG_SEVERITIES.get(severity)
-        if level is None or level > _SYSLOG_SEVERITIES["warning"]:
+        if not syslog_severity_meets_threshold(severity, min_severity):
             return None
 
         host = labels.get("host", "")
@@ -208,11 +253,15 @@ def jarvis_occurrence_id(cluster_name, fingerprint, starts_at_ns):
     return "jarvis:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def operational_event_from_loki(entry: LokiEntry) -> Optional[OperationalEvent]:
+def operational_event_from_loki(
+    entry: LokiEntry,
+    *,
+    min_severity="warning",
+) -> Optional[OperationalEvent]:
     """Dispatch a Loki entry to its source-specific event parser."""
 
     if entry.source == "syslog":
-        return SyslogEvent.from_loki(entry)
+        return SyslogEvent.from_loki(entry, min_severity=min_severity)
     return None
 
 
@@ -229,12 +278,14 @@ class OperationalEventStore(EventDispatcher):
         history_duration="PT24H",
         source_order: Sequence[str] = ("loki",),
         max_events=20000,
+        min_severity="warning",
         **kwargs,
     ):
         if max_events <= 0:
             raise ValueError("max_events must be greater than zero")
         super().__init__(**kwargs)
         self.max_events = max_events
+        self.min_severity = normalize_syslog_severity(min_severity)
         self._normal_events = {}
         self._source_states = {}
         self._expanded_ids = set()
@@ -277,6 +328,34 @@ class OperationalEventStore(EventDispatcher):
         if added:
             self._refresh()
         return added
+
+    def set_min_severity(self, min_severity):
+        """Update the visible syslog threshold and prune now-ineligible events."""
+
+        normalized = normalize_syslog_severity(min_severity)
+        if normalized == self.min_severity:
+            return 0
+        self.min_severity = normalized
+        return self.prune_syslog_below(normalized)
+
+    def prune_syslog_below(self, min_severity):
+        """Drop retained syslog events below min_severity, preserving source state."""
+
+        normalized = normalize_syslog_severity(min_severity)
+        removed = {
+            event_id
+            for event_id, event in self._normal_events.items()
+            if isinstance(event, SyslogEvent)
+            and not syslog_severity_meets_threshold(event.severity, normalized)
+        }
+        if not removed:
+            return 0
+
+        for event_id in removed:
+            del self._normal_events[event_id]
+        self._expanded_ids.difference_update(removed)
+        self._refresh()
+        return len(removed)
 
     def prune_before(self, cutoff_ns):
         """Drop normal events older than cutoff_ns."""
