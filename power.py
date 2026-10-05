@@ -172,13 +172,18 @@ class PowerWidget(RelativeLayout):
         Clock.schedule_once(lambda dt: self._update_power(payload))
 
     def _update_power(self, payload):
+        # Reset current state
+        self.value_error = None
+        self.power = None
+
+        stripped = payload.strip()
+
         try:
-            self.value_error = None
-            self.power = float(payload)
+            if stripped:
+                self.power = float(stripped)
         except ValueError as e:
             Logger.error(e)
             self.value_error = e
-            self.power = None
 
 
 def compute_bar_layout(available_px, display_duration_s=None, bar_duration_s=300.0,

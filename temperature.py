@@ -124,16 +124,19 @@ class TemperatureView(RelativeLayout):
         Clock.schedule_once(lambda dt: self._update_temperature(payload))
 
     def _update_temperature(self, payload):
-        # We received a measurement
-        self.measure_instant = time.time()
+        # Reset current state
+        self.value_error = None
+        self._temp = None
+
+        stripped = payload.strip()
 
         try:
-            self.value_error = None
-            self._temp = float(payload)
+            if stripped:
+                self._temp = float(stripped)
+                self.measure_instant = time.time()
         except ValueError as e:
             Logger.error(e)
             self.value_error = e
-            self._temp = None
 
     def _check_measurement_age(self):
         age = time.time() - self.measure_instant \
