@@ -31,9 +31,6 @@ class MqttClient(TrayIcon):
 
         self.subscriptions = dict()
 
-    def __del__(self):
-        self._disconnect()
-
     def _on_conf(self, _instance, _value):
         self._connect()
 
@@ -63,11 +60,12 @@ class MqttClient(TrayIcon):
             Logger.warning("MQTT: %s", error)
 
     def _connect(self):
+        # Stop the previous network loop before replacing its client.
+        self._disconnect()
         self.status = None
-        self.backend = None
 
         if not self.conf:
-            self._disconnect()
+            return
 
         host = self.conf.get("host", None)
         if not host:
@@ -96,8 +94,16 @@ class MqttClient(TrayIcon):
             self._register_callback(topic, cb)
 
     def _disconnect(self):
-        if self.backend:
-            self.backend.loop_stop()
+        client = self.backend
+        self.backend = None
+        if client is not None:
+            try:
+                client.disconnect()
+            finally:
+                client.loop_stop()
+
+    def teardown(self):
+        self._disconnect()
 
     def _on_disconnect(self, _backend, _userdata, rc):
         Logger.info("MQTT: Client disconnected with code %s", rc)

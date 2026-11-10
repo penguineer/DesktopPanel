@@ -29,25 +29,12 @@ from screenshot import screenshot_window
 from kivy import Logger
 from kivy.config import Config
 from kivy.app import App
+from kivy.base import stopTouchApp
 from kivy.core.window import Window
 
 from kivy.clock import Clock
 
 from kivy.properties import ObjectProperty, StringProperty
-
-running = True
-
-
-def sigint_handler(_signal, _frame):
-    global running
-
-    if running:
-        Logger.info("SIGINT: SIGINT received. Stopping the queue.")
-        running = False
-    else:
-        Logger.warn("SIGINT: Receiving SIGINT the second time. Exit.")
-        sys.exit(0)
-
 
 class TabbedPanelApp(App):
     conf_path = StringProperty()
@@ -63,6 +50,8 @@ class TabbedPanelApp(App):
         self.influxdb_widget = None
         self.presence_tray = None
         self.system_page = None
+        self.gtd_page = None
+        self._stopped = False
 
         self.bind(conf_path=self._on_conf_path)
         self.bind(conf=self._on_conf)
@@ -109,6 +98,7 @@ class TabbedPanelApp(App):
         self.system_page = system_page
         system_page.conf_lambda = lambda conf: conf.get("system", dict())
         gtd_page = GtdPage()
+        self.gtd_page = gtd_page
         gtd_page.conf_lambda = lambda conf: conf.get("gtd", dict())
 
         ca = globalcontent.GlobalContentArea()
@@ -161,14 +151,24 @@ class TabbedPanelApp(App):
         ca.register_border_button(self.presence_tray, presence_page)
 
     def on_stop(self):
-        if self.config_obs is not None:
-            self.config_obs.teardown()
-        if self.amqp_widget is not None:
-            self.amqp_widget.teardown()
-        if self.influxdb_widget is not None:
-            self.influxdb_widget.teardown()
-        if self.system_page is not None:
-            self.system_page.teardown()
+        if self._stopped:
+            return
+        self._stopped = True
+
+        # Tear down each resource even if another resource fails to stop.
+        for name, resource in (
+            ("configuration observer", self.config_obs),
+            ("GTD page", self.gtd_page),
+            ("system page", self.system_page),
+            ("MQTT", self.mqttc),
+            ("AMQP", self.amqp_widget),
+            ("InfluxDB", self.influxdb_widget),
+        ):
+            if resource is not None:
+                try:
+                    resource.teardown()
+                except Exception:
+                    Logger.exception("App: Failed to stop %s", name)
 
     def select(self, index):
         Clock.schedule_once(lambda dt: self.ca.set_page(index))
@@ -195,24 +195,75 @@ def command_screenshot(_cmd, _args):
     screenshot_window()
 
 
+def install_shutdown_handlers(loop, request_stop):
+    """Request shutdown once on SIGINT or SIGTERM, returning a restore callback.
+
+    The native asyncio signal API is used on Unix. On Windows, where that API
+    is unavailable, a standard signal handler forwards the request to the loop.
+    """
+    previous_handlers = {}
+    loop_handlers = []
+    stopping = False
+
+    def handle_signal(signum):
+        nonlocal stopping
+        if stopping:
+            return
+        stopping = True
+        request_stop(signum)
+
+    def restore():
+        for signum in loop_handlers:
+            loop.remove_signal_handler(signum)
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)
+
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[signum] = signal.getsignal(signum)
+            try:
+                loop.add_signal_handler(signum, handle_signal, signum)
+                loop_handlers.append(signum)
+            except NotImplementedError:
+                signal.signal(
+                    signum,
+                    lambda received, _frame: loop.call_soon_threadsafe(
+                        handle_signal, received
+                    ),
+                )
+    except Exception:
+        restore()
+        raise
+
+    return restore
+
 async def main():
-    signal.signal(signal.SIGINT, sigint_handler)
+    def request_stop(signum):
+        Logger.info("App: Received %s, shutting down", signal.Signals(signum).name)
+        # Let async_run() finish normally so Kivy invokes on_stop() once.
+        stopTouchApp()
 
-    Config.set('kivy', 'default_font', [
-        ' FiraSans-Regular',
-        './assets/FiraSans-Regular.ttf',
-        './assets/FiraSans-Regular.ttf',
-        './assets/FiraSans-Regular.ttf',
-        './assets/FiraSans-Regular.ttf'
-    ])
-    Window.size = (800, 480)
+    restore_signals = install_shutdown_handlers(
+        asyncio.get_running_loop(), request_stop
+    )
+    try:
+        Config.set('kivy', 'default_font', [
+            ' FiraSans-Regular',
+            './assets/FiraSans-Regular.ttf',
+            './assets/FiraSans-Regular.ttf',
+            './assets/FiraSans-Regular.ttf',
+            './assets/FiraSans-Regular.ttf'
+        ])
+        Window.size = (800, 480)
 
-    # build and run app
-    app = TabbedPanelApp()
-    # Setup path for automatic reloading with initial configuration pre-load
-    app.conf_path = "configuration/desktop-panel-config.json"
+        # build and run app
+        app = TabbedPanelApp()
+        # Setup path for automatic reloading with initial configuration pre-load
+        app.conf_path = "configuration/desktop-panel-config.json"
 
-    await app.async_run()
+        await app.async_run()
+    finally:
+        restore_signals()
 
 
 if __name__ == '__main__':

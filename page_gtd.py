@@ -25,4 +25,5 @@ Builder.load_string("""
 
 
 class GtdPage(globalcontent.ContentPage):
-    pass
+    def teardown(self):
+        self.ids.issuelist.teardown()
