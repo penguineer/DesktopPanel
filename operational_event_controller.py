@@ -3,6 +3,7 @@
 import time
 
 from kivy import Logger
+from kivy.clock import Clock
 
 from jarvis_events import JarvisClient, JarvisEventSource
 from loki_events import LokiClient, LokiEventSource
@@ -28,6 +29,9 @@ def _build_syslog_query(min_severity="warning"):
 class OperationalEventController(object):
     """Own the independent Loki and Jarvis stores and configured sources."""
 
+    # Refresh age-based retention even if no Loki messages arrive.
+    LOKI_PRUNE_INTERVAL_SECONDS = 5
+
     def __init__(self, on_new_events=None, on_failure=None):
         self.loki_store = OperationalEventStore()
         self.jarvis_store = JarvisEventStore()
@@ -41,6 +45,16 @@ class OperationalEventController(object):
         self._jarvis_config_key = None
         self._history_duration = None
         self._history_covered_through_ns = None
+        self._loki_prune_clock = Clock.schedule_interval(
+            self._prune_expired_loki, self.LOKI_PRUNE_INTERVAL_SECONDS
+        )
+
+    def _prune_expired_loki(self, _dt):
+        cutoff_ns = (
+            time.time_ns()
+            - int(self.loki_store.history_seconds * 1_000_000_000)
+        )
+        self.loki_store.prune_before(cutoff_ns)
 
     def update_config(self, config):
         """Apply a system.operational_events configuration dictionary."""
@@ -80,6 +94,8 @@ class OperationalEventController(object):
             self.loki_store.history_duration = history_duration
             self.jarvis_store.history_duration = history_duration
             self._history_duration = history_duration
+            # A shorter configured look-back applies to existing rows immediately.
+            self._prune_expired_loki(0)
 
         self._update_loki(config, loki, history_duration)
         self._update_jarvis(config, jarvis, history_duration)
@@ -212,5 +228,6 @@ class OperationalEventController(object):
         self._jarvis_source = None
 
     def teardown(self):
+        self._loki_prune_clock.cancel()
         self._stop_loki()
         self._stop_jarvis()
