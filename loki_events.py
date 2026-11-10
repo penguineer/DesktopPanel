@@ -319,8 +319,12 @@ class LokiSync:
             self.history_covered_through_ns = boundary_ns
 
     def merge_entries(self, entries, *, boundary_ns):
+        cutoff_ns = boundary_ns - self.history_window_ns
         events = []
         for entry in entries:
+            # Late tail records must not reintroduce already expired events.
+            if entry.timestamp_ns < cutoff_ns:
+                continue
             event = operational_event_from_loki(
                 entry,
                 min_severity=self.min_severity,
@@ -328,7 +332,7 @@ class LokiSync:
             if event is not None:
                 events.append(event)
 
-        self.store.prune_before(boundary_ns - self.history_window_ns)
+        self.store.prune_before(cutoff_ns)
         added = self.store.merge(events)
         return added
 

@@ -292,6 +292,43 @@ class TestLokiSync:
         assert added == []
         assert store.events == []
 
+    def test_delayed_tail_entries_outside_lookback_are_not_added(self):
+        store = OperationalEventStore(history_duration="PT10S")
+        sync = LokiSync(store)
+        boundary_ns = 100_000_000_000
+
+        added, _ = sync.merge_tail_batch(
+            TailBatch(entries=(
+                _loki_entry(89_000_000_000, "expired"),
+                _loki_entry(90_000_000_000, "at boundary"),
+                _loki_entry(95_000_000_000, "within window"),
+            )),
+            boundary_ns=boundary_ns,
+        )
+
+        assert [event.summary for event in added] == [
+            "at boundary", "within window",
+        ]
+        assert {event.summary for event in store.events} == {
+            "at boundary", "within window",
+        }
+
+    def test_merge_prunes_old_entries_before_adding_new_ones(self):
+        store = OperationalEventStore(history_duration="PT10S")
+        sync = LokiSync(store)
+        old = operational_event_from_loki(_loki_entry(89_000_000_000, "old"))
+        store.merge([old])
+        store.toggle_expanded(old.event_id)
+
+        added = sync.merge_entries(
+            [_loki_entry(89_000_000_000, "old again")],
+            boundary_ns=100_000_000_000,
+        )
+
+        assert added == []
+        assert store.events == []
+        assert not store.is_expanded(old.event_id)
+
 
 class _HistoryClient:
     def __init__(self, entries):

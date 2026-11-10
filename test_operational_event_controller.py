@@ -1,8 +1,10 @@
 """ Pytest tests for the operational event controller module """
 
+from unittest.mock import Mock
+
 import operational_event_controller
 from operational_event_controller import OperationalEventController
-from operational_events import JarvisAlertEvent
+from operational_events import JarvisAlertEvent, LokiEntry, SyslogEvent, SourceStateEvent
 
 
 class _FakeSource:
@@ -426,3 +428,77 @@ class TestOperationalEventController:
         assert len(controller.jarvis_store.events) == 1
         assert controller.jarvis_store.events[0].state == "configuration-error"
 
+
+
+def _loki_warning_event(timestamp_ns, text):
+    return SyslogEvent.from_loki(LokiEntry(
+        timestamp_ns=timestamp_ns,
+        labels={
+            "source": "syslog",
+            "host": "host-a",
+            "application": "test",
+            "severity": "warning",
+            "facility": "user",
+        },
+        line=text,
+    ))
+
+
+def test_pruning_continues_when_no_loki_messages_arrive(monkeypatch):
+    now = [100_000_000_000]
+    monkeypatch.setattr(operational_event_controller.time, "time_ns", lambda: now[0])
+    clock = Mock()
+    schedule = Mock(return_value=clock)
+    monkeypatch.setattr(operational_event_controller.Clock, "schedule_interval", schedule)
+
+    controller = OperationalEventController()
+    controller.loki_store.history_duration = "PT10S"
+    event = _loki_warning_event(95_000_000_000, "quiet period")
+    controller.loki_store.merge([event])
+    controller.loki_store.toggle_expanded(event.event_id)
+    controller.loki_store.set_source_state(
+        "loki", "disconnected", "Loki offline", timestamp_ns=now[0]
+    )
+
+    scheduled_callback, interval = schedule.call_args.args
+    assert interval == controller.LOKI_PRUNE_INTERVAL_SECONDS
+    now[0] = 106_000_000_000
+    scheduled_callback(0)
+
+    assert len(controller.loki_store.events) == 1
+    assert isinstance(controller.loki_store.events[0], SourceStateEvent)
+    assert not controller.loki_store.is_expanded(event.event_id)
+
+    controller.teardown()
+    clock.cancel.assert_called_once_with()
+
+
+def test_shortening_history_duration_prunes_existing_loki_rows_immediately(
+    monkeypatch,
+):
+    now = 100_000_000_000
+    monkeypatch.setattr(operational_event_controller.time, "time_ns", lambda: now)
+    clock = Mock()
+    monkeypatch.setattr(
+        operational_event_controller.Clock,
+        "schedule_interval",
+        Mock(return_value=clock),
+    )
+    monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+    config = {
+        "loki": {
+            "url": "https://loki.example",
+            "user": "desktop-panel",
+            "password": "secret",
+        },
+    }
+    controller = OperationalEventController()
+    controller.update_config({**config, "history_duration": "PT20S"})
+    event = _loki_warning_event(85_000_000_000, "previously visible")
+    controller.loki_store.merge([event])
+
+    controller.update_config({**config, "history_duration": "PT10S"})
+
+    assert controller.loki_store.events == []
+    controller.teardown()
+    clock.cancel.assert_called_once_with()
