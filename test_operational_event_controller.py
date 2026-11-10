@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock
 
+import pytest
+
 import operational_event_controller
 from operational_event_controller import OperationalEventController
 from operational_events import JarvisAlertEvent, LokiEntry, SyslogEvent, SourceStateEvent
@@ -543,6 +545,55 @@ def test_invalid_reconciliation_interval_is_rejected(monkeypatch):
         }
     })
 
+    assert _FakeSource.instances == []
+    assert controller.loki_store.events[0].state == "configuration-error"
+    controller.teardown()
+
+def test_loki_max_events_defaults_and_can_be_reconfigured(monkeypatch):
+    _FakeSource.instances = []
+    monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+    controller = OperationalEventController()
+    config = {
+        "loki": {
+            "url": "https://loki.example",
+            "user": "desktop-panel",
+            "password": "secret",
+        }
+    }
+    controller.update_config(config)
+    first = _FakeSource.instances[-1]
+    assert controller.loki_store.max_events == 1000
+    assert first.client_factory().page_limit == 1000
+
+    controller.update_config({
+        "loki": {**config["loki"], "max_events": 5}
+    })
+    assert first.torn_down
+    second = _FakeSource.instances[-1]
+    assert second.client_factory().page_limit == 5
+    assert controller.loki_store.max_events == 5
+
+    controller.update_config({
+        "loki": {**config["loki"], "max_events": 1}
+    })
+    assert second.torn_down
+    assert controller.loki_store.max_events == 1
+    controller.teardown()
+
+
+@pytest.mark.parametrize("invalid", [0, -2, True, "1000", 1.5])
+def test_invalid_loki_max_events_reports_configuration_error(monkeypatch, invalid):
+    _FakeSource.instances = []
+    monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+    controller = OperationalEventController()
+    controller.update_config({
+        "loki": {
+            "url": "https://loki.example",
+            "user": "desktop-panel",
+            "password": "secret",
+            "max_events": invalid,
+        }
+    })
     assert _FakeSource.instances == []
     assert controller.loki_store.events[0].state == "configuration-error"
     controller.teardown()

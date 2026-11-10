@@ -74,6 +74,9 @@ def syslog_severity_meets_threshold(severity, min_severity="warning"):
     return _SYSLOG_SEVERITY_LEVELS[severity] >= _SYSLOG_SEVERITY_LEVELS[min_severity]
 
 
+DEFAULT_LOKI_EVENT_LIMIT = 1000
+
+
 class OperationalEventCapacityError(RuntimeError):
     """Raised when a defensive in-memory event ceiling would be exceeded."""
 
@@ -277,12 +280,12 @@ class OperationalEventStore(EventDispatcher):
         *,
         history_duration="PT24H",
         source_order: Sequence[str] = ("loki",),
-        max_events=20000,
+        max_events=DEFAULT_LOKI_EVENT_LIMIT,
         min_severity="warning",
         **kwargs,
     ):
-        if max_events <= 0:
-            raise ValueError("max_events must be greater than zero")
+        if type(max_events) is not int or max_events <= 0:
+            raise ValueError("max_events must be a positive integer")
         super().__init__(**kwargs)
         self.max_events = max_events
         self.min_severity = normalize_syslog_severity(min_severity)
@@ -298,34 +301,57 @@ class OperationalEventStore(EventDispatcher):
             raise ValueError("Operational event history duration must be greater than zero")
         self.history_seconds = seconds
 
+    def _evict_excess(self):
+        """Discard oldest normal events without losing source health state."""
+        if len(self._normal_events) <= self.max_events:
+            return set()
+
+        newest = sorted(
+            self._normal_events.values(),
+            key=lambda event: (-event.timestamp_ns, event.event_id),
+        )[:self.max_events]
+        keep_ids = {event.event_id for event in newest}
+        evicted = self._normal_events.keys() - keep_ids
+        for event_id in evicted:
+            del self._normal_events[event_id]
+        self._expanded_ids.difference_update(evicted)
+        return evicted
+
+    def set_max_events(self, max_events):
+        """Apply a new event limit immediately to retained events."""
+        if type(max_events) is not int or max_events <= 0:
+            raise ValueError("max_events must be a positive integer")
+        self.max_events = max_events
+        evicted = self._evict_excess()
+        if evicted:
+            self._refresh()
+        return len(evicted)
+
     def merge(self, incoming):
-        """Add unseen events and return the events that were newly inserted."""
+        """Merge events, keeping only the newest visible entries."""
 
         incoming = list(incoming)
         for event in incoming:
             if isinstance(event, SourceStateEvent):
                 raise TypeError("SourceStateEvent must be managed with set_source_state()")
 
-        new_ids = {
-            event.event_id
-            for event in incoming
-            if event.event_id not in self._normal_events
-        }
-        if len(self._normal_events) + len(new_ids) > self.max_events:
-            raise OperationalEventCapacityError(
-                "Operational event store exceeds the defensive in-memory entry limit"
-            )
+        existing_ids = set(self._normal_events)
+        for event in incoming:
+            self._normal_events.setdefault(event.event_id, event)
 
+        evicted = self._evict_excess()
         added = []
         seen = set()
         for event in incoming:
-            if event.event_id in self._normal_events or event.event_id in seen:
-                continue
-            seen.add(event.event_id)
-            self._normal_events[event.event_id] = event
-            added.append(event)
+            if (
+                event.event_id not in existing_ids
+                and event.event_id in self._normal_events
+                and event.event_id not in seen
+            ):
+                seen.add(event.event_id)
+                added.append(event)
 
-        if added:
+        if added or evicted.intersection(existing_ids):
             self._refresh()
         return added
 

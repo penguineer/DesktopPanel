@@ -11,6 +11,7 @@ import aiohttp
 from kivy import Logger
 
 from operational_events import (
+    DEFAULT_LOKI_EVENT_LIMIT,
     LokiEntry,
     OperationalEventStore,
     normalize_syslog_severity,
@@ -121,21 +122,15 @@ class LokiClient:
         password,
         *,
         query=SYSLOG_QUERY,
-        page_limit=1000,
-        max_page_limit=16000,
-        max_history_entries=20000,
+        page_limit=DEFAULT_LOKI_EVENT_LIMIT,
         session=None,
     ):
-        if page_limit <= 0 or max_page_limit < page_limit:
-            raise ValueError("Invalid Loki history limits")
-        if max_history_entries <= 0:
-            raise ValueError("max_history_entries must be greater than zero")
+        if type(page_limit) is not int or page_limit <= 0:
+            raise ValueError("Loki history limit must be a positive integer")
 
         self.base_url = base_url.rstrip("/")
         self.query = query
         self.page_limit = page_limit
-        self.max_page_limit = max_page_limit
-        self.max_history_entries = max_history_entries
         self._session = session
         self._owns_session = session is None
         self._auth = aiohttp.BasicAuth(username, password)
@@ -184,52 +179,17 @@ class LokiClient:
         return entries, len(entries) >= limit
 
     async def query_range(self, start_ns, end_ns):
-        """Fetch a complete half-open history interval [start_ns, end_ns).
-
-        Saturated intervals are recursively subdivided. If one nanosecond still
-        contains at least max_page_limit entries, completeness cannot be proven
-        with query_range and the operation fails explicitly.
-        """
-
+        """Fetch at most the newest configured number of log entries."""
         if end_ns <= start_ns:
             return []
 
-        collected = {}
-        stack = [(start_ns, end_ns, self.page_limit)]
-
-        while stack:
-            interval_start, interval_end, limit = stack.pop()
-            entries, saturated = await self._query_range_once(
-                interval_start, interval_end, limit
-            )
-            for entry in entries:
-                collected[entry.stable_id] = entry
-            if len(collected) > self.max_history_entries:
-                raise LokiHistoryIncompleteError(
-                    "Loki history exceeds the defensive in-memory entry limit"
-                )
-
-            if not saturated:
-                continue
-
-            span = interval_end - interval_start
-            if span > 1:
-                midpoint = interval_start + span // 2
-                stack.append((midpoint, interval_end, self.page_limit))
-                stack.append((interval_start, midpoint, self.page_limit))
-                continue
-
-            if limit < self.max_page_limit:
-                next_limit = min(limit * 2, self.max_page_limit)
-                stack.append((interval_start, interval_end, next_limit))
-                continue
-
-            raise LokiHistoryIncompleteError(
-                "Loki history interval is saturated at the maximum limit"
-            )
-
+        # Loki applies direction=backward and limit across matching streams.
+        # Fetching older events past the display limit wastes Pi resources.
+        entries, _saturated = await self._query_range_once(
+            start_ns, end_ns, self.page_limit
+        )
         return sorted(
-            collected.values(),
+            entries,
             key=lambda entry: (entry.timestamp_ns, entry.stable_id),
         )
 

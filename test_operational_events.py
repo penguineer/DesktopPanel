@@ -9,7 +9,6 @@ from operational_events import (
     LokiEntry,
     LokiEvent,
     OperationalEvent,
-    OperationalEventCapacityError,
     OperationalEventStore,
     SourceStateEvent,
     SyslogEvent,
@@ -133,18 +132,52 @@ class TestSyslogEvent:
 
 
 class TestOperationalEventStore:
-    def test_memory_ceiling_fails_explicitly(self):
+    def test_memory_limit_evicts_oldest_and_keeps_source_state(self):
         store = OperationalEventStore(max_events=2)
         first = SyslogEvent.from_loki(_entry(timestamp=1, line="first"))
         second = SyslogEvent.from_loki(_entry(timestamp=2, line="second"))
         third = SyslogEvent.from_loki(_entry(timestamp=3, line="third"))
-
         store.merge([first, second])
+        store.toggle_expanded(first.event_id)
+        store.set_source_state("loki", "disconnected", "down", timestamp_ns=0)
 
-        with pytest.raises(OperationalEventCapacityError, match="in-memory"):
-            store.merge([third])
+        assert store.merge([third]) == [third]
+        assert store.events[0].event_id == "source-state:loki"
+        assert store.events[1:] == [third, second]
+        assert not store.is_expanded(first.event_id)
+        assert store.merge([first]) == []
+        assert store.events[1:] == [third, second]
 
-        assert store.events == [second, first]
+    def test_batch_keeps_newest_even_if_oldest_arrives_last(self):
+        store = OperationalEventStore(max_events=2)
+        oldest = SyslogEvent.from_loki(_entry(timestamp=1, line="oldest"))
+        middle = SyslogEvent.from_loki(_entry(timestamp=2, line="middle"))
+        latest = SyslogEvent.from_loki(_entry(timestamp=3, line="latest"))
+
+        assert store.merge([latest, middle, oldest]) == [latest, middle]
+        assert store.events == [latest, middle]
+        assert store.merge([oldest]) == []
+
+    def test_shrinking_event_limit_prunes_immediately(self):
+        store = OperationalEventStore(max_events=3)
+        events = [
+            SyslogEvent.from_loki(_entry(timestamp=i, line=str(i)))
+            for i in range(1, 4)
+        ]
+        store.merge(events)
+        store.toggle_expanded(events[0].event_id)
+
+        assert store.set_max_events(1) == 2
+        assert store.events == [events[2]]
+        assert not store.is_expanded(events[0].event_id)
+        assert store.max_events == 1
+
+    @pytest.mark.parametrize("limit", [0, -1, True, 1.5, "1000", None])
+    def test_invalid_limits_are_rejected(self, limit):
+        with pytest.raises(ValueError):
+            OperationalEventStore(max_events=limit)
+        with pytest.raises(ValueError):
+            OperationalEventStore().set_max_events(limit)
 
     def test_history_and_tail_overlap_deduplicates(self):
         store = OperationalEventStore()
