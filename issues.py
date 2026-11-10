@@ -109,14 +109,13 @@ class IssueList(BoxLayout):
         self.bind(conf=self._on_conf)
         self.property('conf').dispatch(self)
 
-    def __del__(self):
+    def teardown(self):
         if self._observer is not None:
             self._observer.teardown()
+            self._observer = None
 
     def _on_conf(self, _instance, conf: dict) -> None:
-        if self._observer:
-            self._observer.teardown()
-            self._observer = None
+        self.teardown()
 
         path = conf.get("path", None) if conf else None
 
