@@ -4,7 +4,7 @@ import signal
 
 import pytest
 
-from shutdown import install_shutdown_handlers
+from app import install_shutdown_handlers
 
 
 class FakeLoop:

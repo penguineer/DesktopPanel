@@ -25,7 +25,6 @@ from page_system import SystemPage
 from reloadable_json import JsonObserver
 from datetime_display import DateTimeDisplay
 from screenshot import screenshot_window
-from shutdown import install_shutdown_handlers
 
 from kivy import Logger
 from kivy.config import Config
@@ -195,6 +194,48 @@ def command_log(cmd, args):
 def command_screenshot(_cmd, _args):
     screenshot_window()
 
+
+def install_shutdown_handlers(loop, request_stop):
+    """Request shutdown once on SIGINT or SIGTERM, returning a restore callback.
+
+    The native asyncio signal API is used on Unix. On Windows, where that API
+    is unavailable, a standard signal handler forwards the request to the loop.
+    """
+    previous_handlers = {}
+    loop_handlers = []
+    stopping = False
+
+    def handle_signal(signum):
+        nonlocal stopping
+        if stopping:
+            return
+        stopping = True
+        request_stop(signum)
+
+    def restore():
+        for signum in loop_handlers:
+            loop.remove_signal_handler(signum)
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)
+
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[signum] = signal.getsignal(signum)
+            try:
+                loop.add_signal_handler(signum, handle_signal, signum)
+                loop_handlers.append(signum)
+            except NotImplementedError:
+                signal.signal(
+                    signum,
+                    lambda received, _frame: loop.call_soon_threadsafe(
+                        handle_signal, received
+                    ),
+                )
+    except Exception:
+        restore()
+        raise
+
+    return restore
 
 async def main():
     def request_stop(signum):
