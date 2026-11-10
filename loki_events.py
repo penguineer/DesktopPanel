@@ -475,7 +475,11 @@ class LokiEventSource:
                     )
                     break
         finally:
-            await queue.put(None)
+            # Never block termination on a full buffer. Dropped tail batches
+            # are recovered by the next connection's history synchronization.
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait(None)
 
     async def _wait_for_connection(self, connected, tail_task):
         connected_wait = asyncio.create_task(connected.wait())

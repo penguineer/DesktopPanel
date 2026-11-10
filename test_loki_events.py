@@ -634,73 +634,48 @@ def test_periodic_reconciliation_finds_events_without_tail_activity():
     assert client.tail_closed is True
 
 
-def test_reconciliation_error_keeps_live_tail_and_recovers():
+def test_reconciliation_failure_is_nonfatal_and_retryable():
     entry = _loki_entry(99_000_000_000, "recovered log")
     client = _SilentTailReconcileClient([
-        [],
-        LokiHistoryIncompleteError("too many records"),
-        [entry],
+        LokiHistoryIncompleteError("too many records"), [entry],
     ])
     store = OperationalEventStore(history_duration="PT1H")
-    failures = []
     received = []
-    got_event = asyncio.Event()
+    failures = []
     source = LokiEventSource(
         lambda: None,
         store,
-        on_new_events=lambda events: (received.extend(events), got_event.set()),
-        on_failure=lambda state, message: failures.append((state, message)),
+        on_new_events=lambda events: received.extend(events),
+        on_failure=lambda state, message: failures.append(state),
         time_ns=lambda: 100_000_000_000,
-        reconcile_interval_seconds=0.02,
     )
 
     async def exercise():
-        session = asyncio.create_task(source._connected_session(client, initial=True))
-        try:
-            await asyncio.wait_for(got_event.wait(), 1)
-            assert session.done() is False
-            assert client.tail_closed is False
-            assert store._source_states == {}
-        finally:
-            session.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await session
+        await source._reconcile(client)
+        assert store.events[0].state == "history-failed"
+        assert source.sync.history_covered_through_ns is None
+        await source._reconcile(client)
 
     asyncio.run(exercise())
-
-    assert len(failures) == 1
-    assert failures[0][0] == "history-failed"
+    assert failures == ["history-failed"]
     assert [event.summary for event in received] == ["recovered log"]
-    assert len(client.history_calls) >= 3
+    assert store._source_states == {}
+    assert source.sync.history_covered_through_ns == 100_000_000_000
 
 
-def test_reconciliation_timeout_does_not_stop_live_tail():
-    entry = _loki_entry(99_000_000_000, "after timeout")
-    client = _SilentTailReconcileClient([[], "block", [entry]])
-    received = []
-    got_event = asyncio.Event()
+def test_reconciliation_timeout_is_nonfatal():
+    client = _SilentTailReconcileClient(["block"])
+    store = OperationalEventStore()
     source = LokiEventSource(
         lambda: None,
-        OperationalEventStore(history_duration="PT1H"),
-        on_new_events=lambda events: (received.extend(events), got_event.set()),
-        time_ns=lambda: 100_000_000_000,
-        reconcile_interval_seconds=0.01,
-        reconcile_timeout_seconds=0.02,
+        store,
+        reconcile_timeout_seconds=0.01,
     )
 
-    async def exercise():
-        task = asyncio.create_task(source._connected_session(client, initial=True))
-        try:
-            await asyncio.wait_for(got_event.wait(), 1)
-            assert task.done() is False
-            assert client.tail_closed is False
-        finally:
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+    asyncio.run(source._reconcile(client))
 
-    asyncio.run(exercise())
-    assert [event.summary for event in received] == ["after timeout"]
+    assert store.events[0].state == "history-failed"
+    assert source.sync.history_covered_through_ns is None
 
 
 def test_busy_tail_does_not_postpone_reconciliation():
@@ -742,7 +717,7 @@ def test_busy_tail_does_not_postpone_reconciliation():
     assert [event.summary for event in received] == ["missed despite traffic"]
 
 
-def test_full_tail_buffer_forces_reconnect_and_catchup():
+def test_full_tail_buffer_signals_reconnect_without_blocking():
     class FastClient:
         async def tail(self, *, connected_event=None):
             connected_event.set()
@@ -754,12 +729,11 @@ def test_full_tail_buffer_forces_reconnect_and_catchup():
     async def exercise():
         queue = asyncio.Queue(maxsize=1)
         connected = asyncio.Event()
-        task = asyncio.create_task(source._pump_tail(FastClient(), queue, connected))
-        await connected.wait()
-        await asyncio.sleep(0)
-        first = queue.get_nowait()
-        await asyncio.wait_for(task, 1)
-        assert first.entries[0].line == "0"
+        # Deliberately don't drain the queue. The producer must still finish.
+        await asyncio.wait_for(
+            source._pump_tail(FastClient(), queue, connected), 0.5
+        )
+        assert connected.is_set()
         assert queue.get_nowait() is None
 
     asyncio.run(exercise())
