@@ -17,7 +17,9 @@ class _FakeSource:
         on_new_events=None,
         on_failure=None,
         recovery_after_ns=None,
+        reconcile_interval_seconds=900,
     ):
+        self.reconcile_interval_seconds = reconcile_interval_seconds
         self.client_factory = client_factory
         self.store = store
         self.on_new_events = on_new_events
@@ -502,3 +504,45 @@ def test_shortening_history_duration_prunes_existing_loki_rows_immediately(
     assert controller.loki_store.events == []
     controller.teardown()
     clock.cancel.assert_called_once_with()
+
+
+def test_loki_reconciliation_interval_defaults_and_reconfigures(monkeypatch):
+    monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+    controller = OperationalEventController()
+    config = {
+        "loki": {
+            "url": "https://loki.example",
+            "user": "desktop-panel",
+            "password": "secret",
+        }
+    }
+
+    controller.update_config(config)
+    original_source = _FakeSource.instances[-1]
+    assert original_source.reconcile_interval_seconds == 900
+
+    controller.update_config({
+        "loki": {**config["loki"], "reconcile_interval": "PT30M"}
+    })
+    assert original_source.torn_down is True
+    assert _FakeSource.instances[-1].reconcile_interval_seconds == 1800
+    controller.teardown()
+
+
+def test_invalid_reconciliation_interval_is_rejected(monkeypatch):
+    _FakeSource.instances = []
+    monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
+    controller = OperationalEventController()
+
+    controller.update_config({
+        "loki": {
+            "url": "https://loki.example",
+            "user": "desktop-panel",
+            "password": "secret",
+            "reconcile_interval": "PT0S",
+        }
+    })
+
+    assert _FakeSource.instances == []
+    assert controller.loki_store.events[0].state == "configuration-error"
+    controller.teardown()

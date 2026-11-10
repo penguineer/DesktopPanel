@@ -23,6 +23,9 @@ SYSLOG_QUERY = (
     'severity=~"warning|warn|err|error|crit|critical|alert|emerg|emergency"}'
 )
 
+LOKI_TAIL_HEARTBEAT_SECONDS = 30
+LOKI_TAIL_BUFFER_BATCHES = 64
+
 
 class LokiError(RuntimeError):
     """Base class for Loki transport failures."""
@@ -247,6 +250,7 @@ class LokiClient:
                 url,
                 params={"query": self.query},
                 auth=self._auth,
+                heartbeat=LOKI_TAIL_HEARTBEAT_SECONDS,
             ) as websocket:
                 if connected_event is not None:
                     connected_event.set()
@@ -277,7 +281,7 @@ class LokiSync:
         self,
         store: OperationalEventStore,
         *,
-        overlap_seconds=5,
+        overlap_seconds=60,
         min_severity=None,
     ):
         if overlap_seconds < 0:
@@ -366,9 +370,11 @@ class LokiEventSource:
         on_new_events=None,
         on_failure=None,
         recovery_after_ns=None,
-        overlap_seconds=5,
+        overlap_seconds=60,
         reconnect_initial_seconds=1,
         reconnect_max_seconds=30,
+        reconcile_interval_seconds=900,
+        reconcile_timeout_seconds=60,
         min_severity=None,
         time_ns=time.time_ns,
         sleep=asyncio.sleep,
@@ -377,6 +383,8 @@ class LokiEventSource:
             raise ValueError("reconnect_initial_seconds must be greater than zero")
         if reconnect_max_seconds < reconnect_initial_seconds:
             raise ValueError("reconnect_max_seconds must not be smaller than initial")
+        if reconcile_interval_seconds <= 0 or reconcile_timeout_seconds <= 0:
+            raise ValueError("Loki reconciliation interval and timeout must be positive")
 
         self.client_factory = client_factory
         self.store = store
@@ -390,6 +398,8 @@ class LokiEventSource:
         self.recovery_after_ns = recovery_after_ns
         self.reconnect_initial_seconds = reconnect_initial_seconds
         self.reconnect_max_seconds = reconnect_max_seconds
+        self.reconcile_interval_seconds = reconcile_interval_seconds
+        self.reconcile_timeout_seconds = reconcile_timeout_seconds
         self._time_ns = time_ns
         self._sleep = sleep
         self._task = None
@@ -457,9 +467,19 @@ class LokiEventSource:
     async def _pump_tail(self, client, queue, connected):
         try:
             async for batch in client.tail(connected_event=connected):
-                await queue.put(batch)
+                try:
+                    queue.put_nowait(batch)
+                except asyncio.QueueFull:
+                    Logger.warning(
+                        "OperationalEvents: Loki tail buffer full; reconnecting for catch-up"
+                    )
+                    break
         finally:
-            await queue.put(None)
+            # Never block termination on a full buffer. Dropped tail batches
+            # are recovered by the next connection's history synchronization.
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait(None)
 
     async def _wait_for_connection(self, connected, tail_task):
         connected_wait = asyncio.create_task(connected.wait())
@@ -550,8 +570,27 @@ class LokiEventSource:
             if buffered_result != "catchup":
                 return
 
+    async def _reconcile(self, client):
+        """Check for missed entries without interrupting the live tail."""
+        try:
+            added = await asyncio.wait_for(
+                self.sync.sync_history(client, self._time_ns(), initial=False),
+                timeout=self.reconcile_timeout_seconds,
+            )
+        except Exception as exc:
+            Logger.warning(
+                "OperationalEvents: Loki periodic reconciliation failed: %s", exc
+            )
+            self._set_degraded(
+                "history-failed", f"Loki periodic reconciliation failed: {exc}"
+            )
+        else:
+            self._notify_events(added)
+            if self._degraded_state == "history-failed":
+                self._set_healthy()
+
     async def _connected_session(self, client, *, initial):
-        queue = asyncio.Queue()
+        queue = asyncio.Queue(maxsize=LOKI_TAIL_BUFFER_BATCHES)
         connected = asyncio.Event()
         tail_task = asyncio.create_task(self._pump_tail(client, queue, connected))
 
@@ -588,9 +627,19 @@ class LokiEventSource:
 
             self._set_healthy()
             self._started_once = True
+            loop = asyncio.get_running_loop()
+            next_reconcile = loop.time() + self.reconcile_interval_seconds
 
             while True:
-                batch = await queue.get()
+                remaining = next_reconcile - loop.time()
+                if remaining <= 0:
+                    await self._reconcile(client)
+                    next_reconcile = loop.time() + self.reconcile_interval_seconds
+                    continue
+                try:
+                    batch = await asyncio.wait_for(queue.get(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    continue
                 if batch is None:
                     raise LokiError("Loki tail connection closed")
 

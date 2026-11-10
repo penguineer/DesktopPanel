@@ -105,6 +105,7 @@ class OperationalEventController(object):
         user = loki.get("user")
         password = loki.get("password")
         min_severity = loki.get("min_severity", "warning")
+        reconcile_interval = loki.get("reconcile_interval", "PT15M")
 
         try:
             query, min_severity = _build_syslog_query(min_severity)
@@ -119,6 +120,21 @@ class OperationalEventController(object):
             )
             return
 
+        try:
+            reconcile_seconds = parse_iso8601_duration(reconcile_interval)
+            if reconcile_seconds <= 0:
+                raise ValueError("Loki reconciliation interval must be positive")
+        except ValueError as exc:
+            self._stop_loki()
+            self._loki_config_key = None
+            self._configuration_error(
+                self.loki_store,
+                "loki",
+                "Invalid Loki reconciliation interval",
+                exc,
+            )
+            return
+
         config_key = (
             bool(config),
             history_duration,
@@ -126,6 +142,7 @@ class OperationalEventController(object):
             user,
             password,
             min_severity,
+            reconcile_seconds,
         )
         if config_key == self._loki_config_key:
             return
@@ -155,6 +172,7 @@ class OperationalEventController(object):
             on_new_events=self._on_new_events,
             on_failure=self._on_failure,
             recovery_after_ns=self._history_covered_through_ns,
+            reconcile_interval_seconds=reconcile_seconds,
         )
         self._loki_source.start()
 

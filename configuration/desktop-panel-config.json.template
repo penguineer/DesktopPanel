@@ -57,7 +57,8 @@
         "url": "https://loki.example.com",
         "user": "<Loki Basic Auth user>",
         "password": "<Loki Basic Auth password>",
-        "min_severity": "<minimum syslog severity to retrieve: debug, info, notice, warning (default), error, critical, alert, emergency>"
+        "min_severity": "<minimum syslog severity to retrieve: debug, info, notice, warning (default), error, critical, alert, emergency>",
+        "reconcile_interval": "<optional ISO 8601 interval for incremental Loki history checks, default PT15M>"
       },
       "jarvis": {
         "url": "https://jarvis.example.com"
