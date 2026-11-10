@@ -128,107 +128,38 @@ class TestResponseParsing:
         )
 
 
-class _SubdivisionClient(LokiClient):
-    def __init__(
-        self,
-        responses,
-        *,
-        page_limit=2,
-        max_page_limit=8,
-        max_history_entries=20000,
-    ):
+class _BoundedClient(LokiClient):
+    def __init__(self, entries, *, page_limit=3):
         super().__init__(
-            "https://loki.example",
-            "user",
-            "password",
-            page_limit=page_limit,
-            max_page_limit=max_page_limit,
-            max_history_entries=max_history_entries,
-            session=object(),
+            "https://loki.example", "user", "password",
+            page_limit=page_limit, session=object(),
         )
-        self.responses = responses
+        self.entries = entries
         self.calls = []
 
     async def _query_range_once(self, start_ns, end_ns, limit):
         self.calls.append((start_ns, end_ns, limit))
-        response = self.responses[(start_ns, end_ns, limit)]
-        return response
+        return self.entries[:limit], len(self.entries) >= limit
 
 
-class TestHistorySubdivision:
-    def test_saturated_interval_is_split_and_deduplicated(self):
-        duplicate = _loki_entry(5, "duplicate")
-        left = _loki_entry(2, "left")
-        right = _loki_entry(8, "right")
+class TestBoundedHistory:
+    def test_single_backward_query_even_when_limit_is_reached(self):
+        entries = [_loki_entry(i, str(i)) for i in (5, 4, 3, 2, 1)]
+        client = _BoundedClient(entries, page_limit=3)
 
-        client = _SubdivisionClient({
-            (0, 10, 2): ([duplicate, right], True),
-            (0, 5, 2): ([left, duplicate], False),
-            (5, 10, 2): ([duplicate, right], False),
-        })
+        result = asyncio.run(client.query_range(0, 6))
 
-        entries = asyncio.run(client.query_range(0, 10))
+        assert [entry.timestamp_ns for entry in result] == [3, 4, 5]
+        assert client.calls == [(0, 6, 3)]
 
-        assert [e.line for e in entries] == ["left", "duplicate", "right"]
-        assert (0, 5, 2) in client.calls
-        assert (5, 10, 2) in client.calls
+    def test_empty_range_makes_no_request(self):
+        client = _BoundedClient([_loki_entry(1)])
+        assert asyncio.run(client.query_range(2, 2)) == []
+        assert client.calls == []
 
-    def test_single_nanosecond_interval_increases_limit(self):
-        a = _loki_entry(5, "a")
-        b = _loki_entry(5, "b")
-        c = _loki_entry(5, "c")
-
-        client = _SubdivisionClient(
-            {
-                (5, 6, 2): ([a, b], True),
-                (5, 6, 4): ([a, b, c], False),
-            },
-            page_limit=2,
-            max_page_limit=4,
-        )
-
-        entries = asyncio.run(client.query_range(5, 6))
-
-        assert {e.line for e in entries} == {"a", "b", "c"}
-        assert client.calls == [(5, 6, 2), (5, 6, 4)]
-
-    def test_total_history_entry_ceiling_fails_explicitly(self):
-        client = _SubdivisionClient(
-            {
-                (0, 10, 2): ([
-                    _loki_entry(1, "a"),
-                    _loki_entry(2, "b"),
-                ], True),
-                (0, 5, 2): ([
-                    _loki_entry(1, "a"),
-                    _loki_entry(2, "b"),
-                ], False),
-                (5, 10, 2): ([
-                    _loki_entry(6, "c"),
-                    _loki_entry(7, "d"),
-                ], False),
-            },
-            max_history_entries=3,
-        )
-
-        with pytest.raises(LokiHistoryIncompleteError, match="in-memory"):
-            asyncio.run(client.query_range(0, 10))
-
-    def test_unpageable_saturated_timestamp_fails_explicitly(self):
-        a = _loki_entry(5, "a")
-        b = _loki_entry(5, "b")
-
-        client = _SubdivisionClient(
-            {
-                (5, 6, 2): ([a, b], True),
-                (5, 6, 4): ([a, b], True),
-            },
-            page_limit=2,
-            max_page_limit=4,
-        )
-
-        with pytest.raises(LokiHistoryIncompleteError):
-            asyncio.run(client.query_range(5, 6))
+    def test_client_defaults_to_display_limit(self):
+        client = LokiClient("https://loki.example", "user", "password")
+        assert client.page_limit == 1000
 
 
 class TestLokiSync:
