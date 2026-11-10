@@ -19,7 +19,9 @@ class _FakeSource:
         on_failure=None,
         recovery_after_ns=None,
         min_severity=None,
+        reconcile_interval_seconds=900,
     ):
+        self.reconcile_interval_seconds = reconcile_interval_seconds
         self.client_factory = client_factory
         self.store = store
         self.on_new_events = on_new_events

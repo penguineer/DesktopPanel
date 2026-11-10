@@ -530,6 +530,7 @@ def test_loki_reconciliation_interval_defaults_and_reconfigures(monkeypatch):
 
 
 def test_invalid_reconciliation_interval_is_rejected(monkeypatch):
+    _FakeSource.instances = []
     monkeypatch.setattr(operational_event_controller, "LokiEventSource", _FakeSource)
     controller = OperationalEventController()
 

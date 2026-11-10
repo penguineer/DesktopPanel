@@ -109,6 +109,18 @@ class OperationalEventController(object):
 
         try:
             query, min_severity = _build_syslog_query(min_severity)
+        except ValueError as exc:
+            self._stop_loki()
+            self._loki_config_key = None
+            self._configuration_error(
+                self.loki_store,
+                "loki",
+                "Invalid Loki operational event minimum severity",
+                exc,
+            )
+            return
+
+        try:
             reconcile_seconds = parse_iso8601_duration(reconcile_interval)
             if reconcile_seconds <= 0:
                 raise ValueError("Loki reconciliation interval must be positive")
@@ -118,7 +130,7 @@ class OperationalEventController(object):
             self._configuration_error(
                 self.loki_store,
                 "loki",
-                "Invalid Loki operational event severity or reconciliation interval",
+                "Invalid Loki reconciliation interval",
                 exc,
             )
             return
