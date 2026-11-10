@@ -8,6 +8,7 @@ from kivy.clock import Clock
 from jarvis_events import JarvisClient, JarvisEventSource
 from loki_events import LokiClient, LokiEventSource
 from operational_events import (
+    DEFAULT_LOKI_EVENT_LIMIT,
     JarvisEventStore,
     OperationalEventStore,
     syslog_severity_labels,
@@ -106,6 +107,7 @@ class OperationalEventController(object):
         password = loki.get("password")
         min_severity = loki.get("min_severity", "warning")
         reconcile_interval = loki.get("reconcile_interval", "PT15M")
+        max_events = loki.get("max_events", DEFAULT_LOKI_EVENT_LIMIT)
 
         try:
             query, min_severity = _build_syslog_query(min_severity)
@@ -135,6 +137,16 @@ class OperationalEventController(object):
             )
             return
 
+        if type(max_events) is not int or max_events <= 0:
+            self._stop_loki()
+            self._loki_config_key = None
+            self._configuration_error(
+                self.loki_store,
+                "loki",
+                "Invalid Loki max_events (expected positive integer)",
+            )
+            return
+
         config_key = (
             bool(config),
             history_duration,
@@ -143,11 +155,13 @@ class OperationalEventController(object):
             password,
             min_severity,
             reconcile_seconds,
+            max_events,
         )
         if config_key == self._loki_config_key:
             return
 
         self._stop_loki()
+        self.loki_store.set_max_events(max_events)
         self.loki_store.set_min_severity(min_severity)
         self._loki_config_key = config_key
 
@@ -164,7 +178,7 @@ class OperationalEventController(object):
             return
 
         def client_factory():
-            return LokiClient(url, user, password, query=query)
+            return LokiClient(url, user, password, query=query, page_limit=max_events)
 
         self._loki_source = LokiEventSource(
             client_factory,
