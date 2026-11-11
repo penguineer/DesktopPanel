@@ -722,7 +722,13 @@ def test_loki_session_cancels_idle_queue_reader():
 
     async def exercise():
         session = asyncio.create_task(source._connected_session(client, initial=True))
-        await healthy.wait()
+        healthy_wait = asyncio.create_task(healthy.wait())
+        try:
+            done, _ = await asyncio.wait({healthy_wait}, timeout=1)
+            assert healthy_wait in done, "Idle Loki session did not become healthy"
+        finally:
+            healthy_wait.cancel()
+            await asyncio.gather(healthy_wait, return_exceptions=True)
         # Let the queue reader be scheduled and block on the idle tail.
         await asyncio.sleep(0)
         session.cancel()
