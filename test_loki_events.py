@@ -8,6 +8,7 @@ from loki_events import (
     LokiClient,
     LokiEventSource,
     LokiHistoryIncompleteError,
+    LokiError,
     LokiProtocolError,
     LokiSync,
     TailBatch,
@@ -383,11 +384,10 @@ class TestLokiEventSource:
         )
 
         async def exercise():
-            with pytest.raises(Exception):
-                await asyncio.wait_for(
-                    source._connected_session(client, initial=True),
-                    timeout=0.1,
-                )
+            # The scripted tail closes immediately. No wall-clock timeout is
+            # needed to trigger or assert the expected closure.
+            with pytest.raises(LokiError, match="connection closed"):
+                await source._connected_session(client, initial=True)
 
         asyncio.run(exercise())
 
@@ -550,12 +550,20 @@ def test_periodic_reconciliation_finds_events_without_tail_activity():
     async def exercise():
         session = asyncio.create_task(source._connected_session(client, initial=True))
         try:
-            await asyncio.wait_for(got_event.wait(), 1)
-            assert session.done() is False
+            callback = asyncio.create_task(got_event.wait())
+            try:
+                done, _ = await asyncio.wait({callback}, timeout=1)
+                assert callback in done, "Periodic reconciliation did not complete"
+            finally:
+                callback.cancel()
+                await asyncio.gather(callback, return_exceptions=True)
+            assert not session.done()
         finally:
             session.cancel()
+            done, _ = await asyncio.wait({session}, timeout=1)
+            assert session in done, "Loki session ignored cancellation"
             with pytest.raises(asyncio.CancelledError):
-                await session
+                session.result()
 
     asyncio.run(exercise())
 
@@ -610,42 +618,122 @@ def test_reconciliation_timeout_is_nonfatal():
 
 
 def test_busy_tail_does_not_postpone_reconciliation():
+    """Advance a fake monotonic clock while tail batches are arriving."""
+    clock = [0.0]
+    ready = asyncio.Event()
+    got_reconcile = asyncio.Event()
+
     class BusyClient(_SilentTailReconcileClient):
+        def __init__(self, responses):
+            super().__init__(responses)
+            self.feed_started = asyncio.Event()
+            self.next_batch = asyncio.Event()
+
         async def tail(self, *, connected_event=None):
-            if connected_event is not None:
-                connected_event.set()
+            connected_event.set()
             try:
-                while True:
-                    await asyncio.sleep(0.002)
-                    yield TailBatch(entries=())
+                await self.feed_started.wait()
+                for i in range(3):
+                    yield TailBatch(entries=(
+                        _loki_entry(98_000_000_000 + i, f"live-{i}"),
+                    ))
+                    await self.next_batch.wait()
+                    self.next_batch.clear()
+                await asyncio.Event().wait()
             finally:
                 self.tail_closed = True
 
-    entry = _loki_entry(99_000_000_000, "missed despite traffic")
-    client = BusyClient([[], [entry]])
+    client = BusyClient([[], [_loki_entry(99_000_000_000, "missed")]])
     received = []
-    got_event = asyncio.Event()
+
+    def on_new_events(events):
+        received.extend(event.summary for event in events)
+        if any(event.summary == "live-2" for event in events):
+            clock[0] = 900.0
+        if any(event.summary == "missed" for event in events):
+            got_reconcile.set()
+        client.next_batch.set()
+
     source = LokiEventSource(
         lambda: None,
         OperationalEventStore(history_duration="PT1H"),
-        on_new_events=lambda events: (received.extend(events), got_event.set()),
+        on_new_events=on_new_events,
         time_ns=lambda: 100_000_000_000,
-        reconcile_interval_seconds=0.02,
+        monotonic=lambda: clock[0],
+        reconcile_interval_seconds=900,
     )
+    original_healthy = source._set_healthy
+
+    def report_ready():
+        original_healthy()
+        ready.set()
+
+    source._set_healthy = report_ready
 
     async def exercise():
-        task = asyncio.create_task(source._connected_session(client, initial=True))
+        session = asyncio.create_task(source._connected_session(client, initial=True))
         try:
-            await asyncio.wait_for(got_event.wait(), 1)
-            assert task.done() is False
+            ready_wait = asyncio.create_task(ready.wait())
+            try:
+                done, _ = await asyncio.wait({ready_wait}, timeout=1)
+                assert ready_wait in done, "Loki session did not become healthy"
+            finally:
+                ready_wait.cancel()
+                await asyncio.gather(ready_wait, return_exceptions=True)
+
+            client.feed_started.set()
+            reconcile_wait = asyncio.create_task(got_reconcile.wait())
+            try:
+                done, _ = await asyncio.wait({reconcile_wait}, timeout=1)
+                assert reconcile_wait in done, "Busy tail postponed reconciliation"
+            finally:
+                reconcile_wait.cancel()
+                await asyncio.gather(reconcile_wait, return_exceptions=True)
+            assert not session.done()
         finally:
-            task.cancel()
+            session.cancel()
+            done, _ = await asyncio.wait({session}, timeout=1)
+            assert session in done, "Loki session ignored cancellation"
             with pytest.raises(asyncio.CancelledError):
-                await task
+                session.result()
 
     asyncio.run(exercise())
-    assert len(client.history_calls) >= 2
-    assert [event.summary for event in received] == ["missed despite traffic"]
+    assert received == ["live-0", "live-1", "live-2", "missed"]
+    assert len(client.history_calls) == 2
+    assert client.tail_closed
+
+
+def test_loki_session_cancels_idle_queue_reader():
+    client = _SilentTailReconcileClient([[]])
+    source = LokiEventSource(
+        lambda: None,
+        OperationalEventStore(),
+        time_ns=lambda: 100_000_000_000,
+        reconcile_interval_seconds=900,
+    )
+    healthy = asyncio.Event()
+    original_healthy = source._set_healthy
+
+    def mark_healthy():
+        original_healthy()
+        healthy.set()
+
+    source._set_healthy = mark_healthy
+
+    async def exercise():
+        session = asyncio.create_task(source._connected_session(client, initial=True))
+        await healthy.wait()
+        # Let the queue reader be scheduled and block on the idle tail.
+        await asyncio.sleep(0)
+        session.cancel()
+        done, _ = await asyncio.wait({session}, timeout=1)
+        assert session in done, "Idle Loki session ignored cancellation"
+        with pytest.raises(asyncio.CancelledError):
+            session.result()
+        assert client.tail_closed
+        assert len(asyncio.all_tasks()) == 1
+
+    asyncio.run(exercise())
 
 
 def test_full_tail_buffer_signals_reconnect_without_blocking():
