@@ -338,6 +338,7 @@ class LokiEventSource:
         min_severity=None,
         time_ns=time.time_ns,
         sleep=asyncio.sleep,
+        monotonic=time.monotonic,
     ):
         if reconnect_initial_seconds <= 0:
             raise ValueError("reconnect_initial_seconds must be greater than zero")
@@ -362,6 +363,7 @@ class LokiEventSource:
         self.reconcile_timeout_seconds = reconcile_timeout_seconds
         self._time_ns = time_ns
         self._sleep = sleep
+        self._monotonic = monotonic
         self._task = None
         self._failure_active = False
         self._degraded_state = None
@@ -532,11 +534,16 @@ class LokiEventSource:
 
     async def _reconcile(self, client):
         """Check for missed entries without interrupting the live tail."""
+        history_task = asyncio.create_task(
+            self.sync.sync_history(client, self._time_ns(), initial=False)
+        )
         try:
-            added = await asyncio.wait_for(
-                self.sync.sync_history(client, self._time_ns(), initial=False),
-                timeout=self.reconcile_timeout_seconds,
+            done, _pending = await asyncio.wait(
+                {history_task}, timeout=self.reconcile_timeout_seconds
             )
+            if not done:
+                raise asyncio.TimeoutError("Loki periodic reconciliation timed out")
+            added = history_task.result()
         except Exception as exc:
             Logger.warning(
                 "OperationalEvents: Loki periodic reconciliation failed: %s", exc
@@ -548,11 +555,19 @@ class LokiEventSource:
             self._notify_events(added)
             if self._degraded_state == "history-failed":
                 self._set_healthy()
+        finally:
+            if not history_task.done():
+                history_task.cancel()
+                try:
+                    await history_task
+                except asyncio.CancelledError:
+                    pass
 
     async def _connected_session(self, client, *, initial):
         queue = asyncio.Queue(maxsize=LOKI_TAIL_BUFFER_BATCHES)
         connected = asyncio.Event()
         tail_task = asyncio.create_task(self._pump_tail(client, queue, connected))
+        queue_reader = None
 
         try:
             await self._wait_for_connection(connected, tail_task)
@@ -587,19 +602,28 @@ class LokiEventSource:
 
             self._set_healthy()
             self._started_once = True
-            loop = asyncio.get_running_loop()
-            next_reconcile = loop.time() + self.reconcile_interval_seconds
+            next_reconcile = self._monotonic() + self.reconcile_interval_seconds
 
             while True:
-                remaining = next_reconcile - loop.time()
+                remaining = next_reconcile - self._monotonic()
                 if remaining <= 0:
                     await self._reconcile(client)
-                    next_reconcile = loop.time() + self.reconcile_interval_seconds
+                    next_reconcile = (
+                        self._monotonic() + self.reconcile_interval_seconds
+                    )
                     continue
-                try:
-                    batch = await asyncio.wait_for(queue.get(), timeout=remaining)
-                except asyncio.TimeoutError:
+
+                # Keep the same reader across reconciliation timeouts. A late
+                # queue item must not be consumed and then silently discarded.
+                if queue_reader is None:
+                    queue_reader = asyncio.create_task(queue.get())
+                done, _pending = await asyncio.wait(
+                    {queue_reader}, timeout=remaining
+                )
+                if not done:
                     continue
+                batch = queue_reader.result()
+                queue_reader = None
                 if batch is None:
                     raise LokiError("Loki tail connection closed")
 
@@ -614,6 +638,12 @@ class LokiEventSource:
                     await self._recover_dropped_entries(client, queue)
                     self._set_healthy()
         finally:
+            if queue_reader is not None:
+                queue_reader.cancel()
+                try:
+                    await queue_reader
+                except asyncio.CancelledError:
+                    pass
             tail_task.cancel()
             try:
                 await tail_task

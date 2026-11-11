@@ -611,10 +611,11 @@ class TestJarvisScheduling:
         source.sync = sync
 
         async def run_source():
-            try:
-                await asyncio.wait_for(source.run(), timeout=0.25)
-            except asyncio.CancelledError:
-                pass
+            task = asyncio.create_task(source.run())
+            done, _ = await asyncio.wait({task}, timeout=1)
+            assert task in done, "Jarvis invalidation was not reconciled"
+            with pytest.raises(asyncio.CancelledError):
+                task.result()
 
         asyncio.run(run_source())
 
@@ -637,3 +638,34 @@ class TestJarvisScheduling:
 
         assert sync.calls == 3
 
+
+
+def test_jarvis_invalidation_wait_honors_cancellation():
+    source = JarvisEventSource(lambda: None, JarvisEventStore())
+
+    async def exercise():
+        invalidated = asyncio.Event()
+        task = asyncio.create_task(
+            source._wait_for_invalidation(invalidated, timeout=3600)
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=1)
+        assert task in done, "Jarvis invalidation wait ignored cancellation"
+        with pytest.raises(asyncio.CancelledError):
+            task.result()
+        assert len(asyncio.all_tasks()) == 1
+
+    asyncio.run(exercise())
+
+
+def test_jarvis_invalidation_wait_accepts_ready_event():
+    source = JarvisEventSource(lambda: None, JarvisEventStore())
+
+    async def exercise():
+        invalidated = asyncio.Event()
+        invalidated.set()
+        await source._wait_for_invalidation(invalidated, timeout=3600)
+        assert len(asyncio.all_tasks()) == 1
+
+    asyncio.run(exercise())
