@@ -619,6 +619,18 @@ class JarvisEventSource:
                 Logger.warning("OperationalEvents: Jarvis WebSocket failure: %s", exc)
             await self._sleep(self.reconnect_seconds)
 
+    async def _wait_for_invalidation(self, invalidated, timeout):
+        """Wait for a change or poll deadline without losing cancellation."""
+        waiter = asyncio.create_task(invalidated.wait())
+        try:
+            await asyncio.wait({waiter}, timeout=timeout)
+        finally:
+            waiter.cancel()
+            try:
+                await waiter
+            except asyncio.CancelledError:
+                pass
+
     async def run(self):
         while True:
             try:
@@ -647,10 +659,7 @@ class JarvisEventSource:
                                 if not self._failure_active
                                 else self.disconnected_poll_seconds
                             )
-                            try:
-                                await asyncio.wait_for(invalidated.wait(), timeout=timeout)
-                            except asyncio.TimeoutError:
-                                pass
+                            await self._wait_for_invalidation(invalidated, timeout)
                     finally:
                         watcher.cancel()
                         try:
